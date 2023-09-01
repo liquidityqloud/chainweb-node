@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, ScopedTypeVariables #-}
 
 -- |
 -- Module: Chainweb.Pact.Backend.RelationalCheckpointer
@@ -203,7 +203,20 @@ doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
       beginSavepoint ReadBlock
 
       -- rewind the block state to the given block height
-      endTxId <- callDb "doReadRestoreBegin" $ \db -> TxId . fromIntegral <$> getEndTxId db (bh - 1) bhash
+      endTxId <- callDb "doReadRestoreBegin" $ \db -> do
+        let
+          qtext' = "SELECT blockheight, hash FROM BlockHistory \
+                  \ ORDER BY blockheight DESC LIMIT 10"
+
+          go [SInt hgt, SBlob blob] =
+              let hash = either error id $ runGetEitherS decodeBlockHash blob
+              in return (fromIntegral hgt :: Integer, hash :: BlockHash)
+          go _ = fail "impossible"
+
+        r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
+        print r'
+
+        TxId . fromIntegral <$> getEndTxId db (bh - 1) bhash
       assign bsBlockHeight bh
       assign bsTxId endTxId
 
@@ -281,7 +294,16 @@ doDiscard dbenv = runBlockEnv dbenv $ do
 doGetLatest :: Db logger -> IO (Maybe (BlockHeight, BlockHash))
 doGetLatest dbenv =
     runBlockEnv dbenv $ callDb "getLatestBlock" $ \db -> do
-        r' <- qry_ db qtext' [RInt]
+        let
+          qtext' = "SELECT blockheight, hash FROM BlockHistory \
+                  \ ORDER BY blockheight DESC LIMIT 10"
+
+          go' [SInt hgt, SBlob blob] =
+              let hash = either error id $ runGetEitherS decodeBlockHash blob
+              in return (fromIntegral hgt :: Integer, hash :: BlockHash)
+          go' _ = fail "impossible"
+
+        r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go'
         print r'
 
         r <- qry_ db qtext [RInt, RBlob] >>= mapM go
@@ -291,10 +313,6 @@ doGetLatest dbenv =
   where
     qtext = "SELECT blockheight, hash FROM BlockHistory \
             \ ORDER BY blockheight DESC LIMIT 1"
-
-    qtext' = "SELECT blockheight FROM BlockHistory \
-            \ ORDER BY blockheight DESC LIMIT 10"
-
 
     go [SInt hgt, SBlob blob] =
         let hash = either error id $ runGetEitherS decodeBlockHash blob
@@ -443,6 +461,19 @@ getEndTxId db bhi bha = do
     [] -> throwM $ BlockHeaderLookupFailure $ "doGetBlockHistory: not in db: " <>
           sshow (bhi,bha)
     _ -> internalError $ "doGetBlockHistory: expected single-row int result, got " <> sshow r
+
+-- getEndTxId' :: Database -> BlockHeight -> IO Int64
+-- getEndTxId' db bhi = do
+--   r <- qry db
+--     "SELECT endingtxid FROM BlockHistory WHERE blockheight = ?;"
+--     [SInt $ fromIntegral bhi]
+--     [RInt]
+--   case r of
+--     [[SInt tid]] -> return tid
+--     [] -> throwM $ BlockHeaderLookupFailure $ "doGetBlockHistory: not in db: " <>
+--           sshow (bhi)
+--     _ -> internalError $ "doGetBlockHistory: expected single-row int result, got " <> sshow r
+
 
 doGetHistoricalLookup
     :: Db logger
