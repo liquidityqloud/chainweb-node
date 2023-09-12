@@ -25,6 +25,7 @@ import Control.Concurrent.MVar
 import Control.Lens
 import Control.Monad
 import Control.Monad.Catch
+import Control.Monad.Reader
 import Control.Monad.IO.Class
 import Control.Monad.State (gets)
 
@@ -115,7 +116,8 @@ initRelationalCheckpointer'
     -> ChainId
     -> IO (PactDbEnv (BlockEnv logger SQLiteEnv), Checkpointer logger)
 initRelationalCheckpointer' bstate sqlenv loggr v cid = do
-    let dbenv = BlockDbEnv sqlenv loggr
+    pendingBlocks <- newMVar HashMap.empty
+    let dbenv = BlockDbEnv sqlenv loggr pendingBlocks
     db <- newMVar (BlockEnv dbenv bstate)
     rodb <- newMVar (BlockEnv dbenv bstate)
     runBlockEnv db initSchema
@@ -128,6 +130,7 @@ initRelationalCheckpointer' bstate sqlenv loggr v cid = do
           , _cpGetLatestBlock = doGetLatest db
           , _cpReadRestoreBegin = doReadRestoreBegin v cid db rodb
           , _cpReadRestoreEnd = doReadRestoreEnd rodb
+          , _cpMemSave = doMemSave rodb
           , _cpBeginCheckpointerBatch = doBeginBatch db
           , _cpCommitCheckpointerBatch = doCommitBatch db
           , _cpDiscardCheckpointerBatch = doDiscardBatch db
@@ -191,33 +194,69 @@ doReadRestoreBegin :: (Logger logger)
   -> (BlockHeight, BlockHash)
   -> IO (PactDbEnv' logger)
 doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
+    let bh' = bh - 1
     -- copy data from the real dbenv to read-only dbenv
-    dbContent <- readMVar dbenv
-    modifyMVar_ rodbenv (const $ pure dbContent)
+    -- dbContent <- readMVar dbenv
+    -- modifyMVar_ rodbenv (const $ pure dbContent)
+
+    mEndTx' <- runBlockEnv dbenv $ do
+      -- TODO: try to use the data from the blocks to get the ending tx
+
+      -- blocks <- gets _bsPendingBlocks
+
+      (BlockDbEnv _ _ pbs) <- ask
+      blocks <- liftIO $ readMVar pbs
+
+      pure $ blocks -- $ HashMap.lookup (bh, bhash) blocks
+      -- liftIO $ putStrLn $ "doReadRestoreBegin.runBlockEnv.blocks: " ++ show blocks
+
+    liftIO $ putStrLn $ "doReadRestoreBegin.mEndTx' blocks: " ++ (show mEndTx')
 
     runBlockEnv rodbenv $ do
+      -- clearPendingBlocks
+
       setModuleNameFix
       setSortedKeys
       setLowerCaseTables
       clearPendingTxState
       beginSavepoint ReadBlock
 
+      (BlockDbEnv _ _ pbs) <- ask
+      blocks <- liftIO $ readMVar pbs
+
+      let mEndTx = HashMap.lookup (bh', bhash) blocks
+      liftIO $ putStrLn $ "doReadRestoreBegin.mEndTx blocks: " ++ show (bh, bhash, blocks)
+
+
       -- rewind the block state to the given block height
-      endTxId <- callDb "doReadRestoreBegin" $ \db -> do
-        let
-          qtext' = "SELECT blockheight, hash FROM BlockHistory \
-                  \ ORDER BY blockheight DESC LIMIT 10"
 
-          go [SInt hgt, SBlob blob] =
-              let hash = either error id $ runGetEitherS decodeBlockHash blob
-              in return (fromIntegral hgt :: Integer, hash :: BlockHash)
-          go _ = fail "impossible"
 
-        r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
-        print r'
+      endTxId <- case mEndTx of
+        Just x -> do
+          liftIO $ putStrLn $ "GOT THE ENDING TX " ++ show x
+          pure x
+        Nothing -> callDb "doReadRestoreBegin" $ \db -> do
+          let
+            qtext' = "SELECT blockheight, hash FROM BlockHistory \
+                    \ ORDER BY blockheight DESC LIMIT 10"
 
-        TxId . fromIntegral <$> getEndTxId db (bh - 1) bhash
-      assign bsBlockHeight bh
+            go [SInt hgt, SBlob blob] =
+                let hash = either error id $ runGetEitherS decodeBlockHash blob
+                in return (fromIntegral hgt :: Integer, hash :: BlockHash)
+            go _ = fail "impossible"
+
+          r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
+          print ("BLOCKS: 2: " :: String, r')
+
+          TxId . fromIntegral <$> getEndTxId db bh' bhash
+
+      -- blocks <- gets _bsPendingBlocks
+      -- liftIO $ putStrLn $ "doReadRestoreBegin.blocks: " ++ show blocks
+
+      txIddd <- gets _bsTxId
+      liftIO $ putStrLn $ "doReadRestoreBegin.ending tx WAS and BECOME: " ++ show (txIddd, endTxId)
+
+      assign bsBlockHeight bh'
       assign bsTxId endTxId
 
       liftIO $ putStrLn $ "doReadRestoreBegin: " ++ (show (bh, endTxId))
@@ -231,6 +270,10 @@ doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
 
 doReadRestoreEnd :: Db logger -> IO ()
 doReadRestoreEnd db = runBlockEnv db $ do
+    txIddd <- gets _bsTxId
+    liftIO $ putStrLn $ "doReadRestoreEnd.ending tx IS: " ++ show txIddd
+
+
     rollbackSavepoint ReadBlock
 
     -- @ROLLBACK TO n@ only rolls back updates up to @n@ but doesn't remove the
@@ -239,11 +282,18 @@ doReadRestoreEnd db = runBlockEnv db $ do
     --
     commitSavepoint ReadBlock
 
+doMemSave :: Db logger -> (BlockHeight, BlockHash) -> IO ()
+doMemSave dbenv (height, hash) = runBlockEnv dbenv $ do
+  nextTxId <- gets _bsTxId
+  memBlockHistoryInsert height hash nextTxId
+
 doSave :: Db logger -> BlockHash -> IO ()
 doSave dbenv hash = runBlockEnv dbenv $ do
+    nextTxId' <- gets _bsTxId
     height <- gets _bsBlockHeight
     runPending height
     nextTxId <- gets _bsTxId
+    liftIO $ putStrLn $ "doSave: nextTxId WAS AND IS " ++ show (nextTxId', nextTxId)
     blockHistoryInsert height hash nextTxId
 
     -- FIXME: if any of the above fails with an exception the following isn't
@@ -304,7 +354,7 @@ doGetLatest dbenv =
           go' _ = fail "impossible"
 
         r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go'
-        print r'
+        print ("BLOCKS: 3: " :: String, r')
 
         r <- qry_ db qtext [RInt, RBlob] >>= mapM go
         case r of

@@ -650,11 +650,14 @@ simpleBlockEnvInit
     => logger
     -> (PactDb (BlockEnv logger SQLiteEnv) -> BlockEnv logger SQLiteEnv -> (MVar (BlockEnv logger SQLiteEnv) -> IO ()) -> IO a)
     -> IO a
-simpleBlockEnvInit logger f = withTempSQLiteConnection chainwebPragmas $ \sqlenv ->
-    f chainwebPactDb (blockEnv sqlenv) (\v -> runBlockEnv v initSchema)
+simpleBlockEnvInit logger f = do
+  pendingBlocks <- newMVar HM.empty
+
+  withTempSQLiteConnection chainwebPragmas $ \sqlenv ->
+    f chainwebPactDb (blockEnv sqlenv pendingBlocks) (\v -> runBlockEnv v initSchema)
   where
-    blockEnv e = BlockEnv
-        (BlockDbEnv e (addLabel ("block-environment", "simpleBlockEnvInit") logger))
+    blockEnv e pb = BlockEnv
+        (BlockDbEnv e (addLabel ("block-environment", "simpleBlockEnvInit") logger) pb)
         (initBlockState defaultModuleCacheLimit $ genesisHeight testVer testChainId)
 
 {- this should be moved to pact -}

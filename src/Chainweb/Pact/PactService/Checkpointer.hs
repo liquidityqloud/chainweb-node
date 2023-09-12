@@ -83,6 +83,7 @@ import Data.Either
 import Data.IORef
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Vector as V
 
 import GHC.Stack
 
@@ -109,6 +110,8 @@ import Chainweb.TreeDB (getBranchIncreasing, forkEntry, lookup, lookupM)
 import Chainweb.Utils hiding (check)
 
 import Chainweb.Storage.Table
+
+import Pact.Types.Command
 
 -- | Support lifting bracket style continuations in 'IO' into 'PactServiceM' by
 -- providing a function that allows unwrapping pact actions in IO while
@@ -432,7 +435,7 @@ rewindTo caller rewindLimit (Just (ParentHeader parent)) = do
           then do
             liftIO $ putStrLn $ "playFork: " ++ (show (_blockHeight parent))
 
-            liftIO $ putStrLn $ "rewindTo.playFork: Saving header at " ++ (show commonAncestor)
+            -- liftIO $ putStrLn $ "rewindTo.playFork: Saving header at " ++ (show commonAncestor)
 
             -- If no blocks got replayed the checkpointer isn't restored via
             -- 'fastForward'. So we do an empty 'withCheckPointerWithoutRewind'.
@@ -574,7 +577,21 @@ fastForwardRead (target, block) = do
     liftIO $ putStrLn $ "fastForwardingReadHashes: " ++ (show (_blockHash $ _parentHeader target, _blockHash block))
     -- This does a restore, i.e. it rewinds the checkpointer back in
     -- history, if needed.
-    withCheckpointerWithoutRewind (Just target) "fastForward" $ \pdbenv -> do
+    -- withCheckpointerWithoutRewind (Just target) "fastForward" $ \pdbenv -> do
+    --     payloadDb <- asks _psPdb
+    --     payload <- liftIO $ tableLookup payloadDb bpHash >>= \case
+    --         Nothing -> throwM $ PactInternalError
+    --             $ "Checkpointer.rewindTo.fastForwardRead: lookup of payload failed"
+    --             <> ". BlockPayloadHash: " <> encodeToText bpHash
+    --             <> ". Block: "<> encodeToText (ObjectEncoded block)
+    --         Just x -> return $ payloadWithOutputsToPayloadData x
+    --     liftIO $ putStrLn "fastForward execBlock!!!!!"
+
+    --     T2 _ (Transactions txs _) <- execBlock block payload pdbenv
+    --     liftIO $ putStrLn $ "fastForward transactions: " ++ (show $ V.map (_crTxId . snd) txs)
+    --     return $! Save block ()
+
+    withCheckpointerWithoutReadRewind target "fastForwardRead" $ \pdbenv -> do
         payloadDb <- asks _psPdb
         payload <- liftIO $ tableLookup payloadDb bpHash >>= \case
             Nothing -> throwM $ PactInternalError
@@ -582,21 +599,16 @@ fastForwardRead (target, block) = do
                 <> ". BlockPayloadHash: " <> encodeToText bpHash
                 <> ". Block: "<> encodeToText (ObjectEncoded block)
             Just x -> return $ payloadWithOutputsToPayloadData x
-        liftIO $ putStrLn "fastForward execBlock!!!!!"
-        void $ execBlock block payload pdbenv
-        return $! Save block ()
+        liftIO $ putStrLn "fastForwardRead execBlock!!!!!"
+        -- void $ execBlock block payload pdbenv
+        T2 _ (Transactions txs _) <- execBlock block payload pdbenv
+        liftIO $ putStrLn $ "fastForward transactions: " ++ (show $ V.map (_crTxId . snd) txs)
 
-    -- withCheckpointerWithoutReadRewind target "fastForwardRead" $ \pdbenv -> do
-    --     payloadDb <- asks _psPdb
-    --     payload <- liftIO $ tableLookup payloadDb bpHash >>= \case
-    --         Nothing -> throwM $ PactInternalError
-    --             $ "Checkpointer.rewindTo.fastForward: lookup of payload failed"
-    --             <> ". BlockPayloadHash: " <> encodeToText bpHash
-    --             <> ". Block: "<> encodeToText (ObjectEncoded block)
-    --         Just x -> return $ payloadWithOutputsToPayloadData x
-    --     liftIO $ putStrLn "fastForwardRead execBlock!!!!!"
-    --     void $ execBlock block payload pdbenv
-    -- setParentHeader "fastForwardRead" (ParentHeader block)
+    setParentHeader "fastForwardRead" (ParentHeader block)
+
+    cp <- getCheckpointer
+    liftIO $ _cpMemSave cp (_blockHeight block, _blockHash block)
+
   where
     bpHash = _blockPayloadHash block
 

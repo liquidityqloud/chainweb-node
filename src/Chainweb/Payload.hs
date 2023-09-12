@@ -138,7 +138,7 @@ import Chainweb.Storage.Table
 import Chainweb.Utils
 import Chainweb.Utils.Serialization
 
-import Debug.Trace (traceShow)
+-- import Debug.Trace (traceShow)
 
 -- -------------------------------------------------------------------------- --
 -- Block Transactions Hash
@@ -891,7 +891,7 @@ blockPayload
 blockPayload txs outs
     = fromLog $! newMerkleLog @a @ChainwebHashTag
         $ _blockTransactionsHash txs
-        :+: (traceShow ("blockPayload outputshash " ++ (show outs)) $ _blockOutputsHash outs)
+        :+: _blockOutputsHash outs -- (traceShow ("blockPayload outputshash " ++ (show outs)) $ _blockOutputsHash outs)
         :+: emptyBody
 
 -- | Compute BlockPayload from transactions and outputs.

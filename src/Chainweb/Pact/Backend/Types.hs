@@ -73,6 +73,7 @@ module Chainweb.Pact.Backend.Types
     , BlockDbEnv(..)
     , bdbenvDb
     , bdbenvLogger
+    , bdbenvPendingBlocks
     , SQLiteFlag(..)
 
       -- * mempool
@@ -94,6 +95,7 @@ import Data.ByteString (ByteString)
 import Data.DList (DList)
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
 import Data.HashSet (HashSet)
 import Data.Map.Strict (Map)
 import Data.Vector (Vector)
@@ -251,6 +253,7 @@ makeLenses ''BlockState
 data BlockDbEnv logger p = BlockDbEnv
     { _bdbenvDb :: !p
     , _bdbenvLogger :: !logger
+    , _bdbenvPendingBlocks :: !(MVar (HashMap (BlockHeight, BlockHash) TxId))
     }
 
 makeLenses ''BlockDbEnv
@@ -309,6 +312,7 @@ data Checkpointer logger = Checkpointer
       -- the "latest block"
     , _cpReadRestoreEnd :: !(IO ())
       -- ^ closes ReadBlock savepoint discarding any changes
+    , _cpMemSave :: !((BlockHeight, BlockHash) -> IO ())
 
     , _cpBeginCheckpointerBatch :: !(IO ())
     , _cpCommitCheckpointerBatch :: !(IO ())

@@ -27,9 +27,12 @@ module Chainweb.Pact.Backend.ChainwebPactDb
 , createUserTable
 , vacuumDb
 , toTxLog
+, memBlockHistoryInsert
+, clearPendingBlocks
 ) where
 
 import Control.Applicative
+import Control.Concurrent.MVar
 import Control.Lens
 import Control.Monad
 import Control.Monad.Catch
@@ -98,7 +101,7 @@ tbl t@(Utf8 b)
 chainwebPactDb :: (Logger logger) => PactDb (BlockEnv logger SQLiteEnv)
 chainwebPactDb = PactDb
     { _readRow = \d k e -> runBlockEnv e $ doReadRow Nothing d k
-    , _writeRow = \wt d k v e -> runBlockEnv e $ doWriteRow wt d k v
+    , _writeRow = \wt d k v e -> runBlockEnv e $ doWriteRow Nothing wt d k v
     , _keys = \d e -> runBlockEnv e $ doKeys d
     , _txids = \t txid e -> runBlockEnv e $ doTxIds t txid
     , _createUserTable = \tn mn e -> runBlockEnv e $ doCreateUserTable tn mn
@@ -112,10 +115,7 @@ chainwebPactDb = PactDb
 readOnlyChainwebPactDb :: (Logger logger) => BlockHeight -> PactDb (BlockEnv logger SQLiteEnv)
 readOnlyChainwebPactDb bh = chainwebPactDb
     { _readRow = \d k e -> runBlockEnv e $ doReadRow (Just bh) d k
-    , _commitTx = \e ->
-        -- we commit to change the state of the block
-        -- but return the empty list to avoid writing to the db
-        runBlockEnv e doCommit -- >>= \_ -> pure []
+    , _writeRow = \wt d k v e -> runBlockEnv e $ doWriteRow (Just bh) wt d k v
     }
 
 getPendingData :: BlockHandler logger SQLiteEnv [SQLitePendingData]
@@ -158,6 +158,7 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         -> (Utf8 -> BS.ByteString -> MaybeT (BlockHandler logger SQLiteEnv) v)
         -> BlockHandler logger SQLiteEnv (Maybe v)
     lookupWithKey key checkCache = do
+        liftIO $ putStrLn $ "lookupWithKey " ++ show (key, mbh)
         pds <- getPendingData
         let lookPD = foldr1 (<|>) $ map (lookupInPendingData key) pds
         let lookDB = lookupInDb key checkCache
@@ -170,7 +171,9 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         -> MaybeT (BlockHandler logger SQLiteEnv) v
     lookupInPendingData (Utf8 rowkey) p = do
         let deltaKey = SQLiteDeltaKey tableNameBS rowkey
+        liftIO $ putStrLn $ "lookupInPendingData " ++ show (rowkey, mbh)
         ddata <- fmap _deltaData <$> MaybeT (return $ HashMap.lookup deltaKey (_pendingWrites p))
+        liftIO $ putStrLn $ "lookupInPendingData got data " ++ show (rowkey, ddata, mbh)
         if null ddata
             -- should be impossible, but we'll check this case
             then mzero
@@ -190,6 +193,8 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         let blockLimitParam = maybe [] (\(BlockHeight bh) -> [SInt $ fromIntegral bh - 1]) mbh
         result <- lift $ callDb "doReadRow"
                        $ \db -> qry db queryStmt ([SText rowkey] ++ blockLimitParam) [RBlob]
+
+        liftIO $ putStrLn $ "lookupInDb " ++ show (rowkey, result, mbh)
         case result of
             [] -> mzero
             [[SBlob a]] -> checkCache rowkey a
@@ -198,6 +203,7 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
                      T.pack (show err)
 
     checkModuleCache u b = MaybeT $ do
+        -- TODO: might need to limit the cache by blockheader mbh
         !txid <- use bsTxId -- cache priority
         mc <- use bsModuleCache
         (r, mc') <- liftIO $ checkDbCache u b txid mc
@@ -289,12 +295,13 @@ markTableMutation tablename blockheight db = do
     mutq = "INSERT OR IGNORE INTO VersionedTableMutation VALUES (?,?);"
 
 checkInsertIsOK
-    :: WriteType
+    :: Maybe BlockHeight
+    -> WriteType
     -> Domain RowKey RowData
     -> RowKey
     -> BlockHandler logger SQLiteEnv (Maybe RowData)
-checkInsertIsOK wt d k = do
-    olds <- doReadRow Nothing d k
+checkInsertIsOK mbh wt d k = do
+    olds <- doReadRow mbh d k
     case (olds, wt) of
         (Nothing, Insert) -> return Nothing
         (Just _, Insert) -> err "Insert: row found for key "
@@ -306,19 +313,20 @@ checkInsertIsOK wt d k = do
     err msg = internalError $ "checkInsertIsOK: " <> msg <> asString k
 
 writeUser
-    :: WriteType
+    :: Maybe BlockHeight
+    -> WriteType
     -> Domain RowKey RowData
     -> RowKey
     -> RowData
     -> BlockHandler logger SQLiteEnv ()
-writeUser wt d k rowdata@(RowData _ row) = gets _bsTxId >>= go
+writeUser mbh wt d k rowdata@(RowData _ row) = gets _bsTxId >>= go
   where
     toTableName = TableName . fromUtf8
     tn = domainTableName d
     ttn = toTableName tn
 
     go txid = do
-        m <- checkInsertIsOK wt d k
+        m <- checkInsertIsOK mbh wt d k
         row' <- case m of
                     Nothing -> ins
                     (Just old) -> upd old
@@ -327,6 +335,7 @@ writeUser wt d k rowdata@(RowData _ row) = gets _bsTxId >>= go
       where
         upd (RowData oldV oldrow) = do
             let row' = RowData oldV $ ObjectMap (M.union (_objectMap row) (_objectMap oldrow))
+            liftIO $ putStrLn $ "writeUser.upd old row and new row " ++ show (oldrow, row')
             recordPendingUpdate (convRowKey k) tn txid row'
             return row'
 
@@ -336,13 +345,14 @@ writeUser wt d k rowdata@(RowData _ row) = gets _bsTxId >>= go
 
 doWriteRow
   :: (AsString k, J.Encode v)
-    => WriteType
+    => Maybe BlockHeight
+    -> WriteType
     -> Domain k v
     -> k
     -> v
     -> BlockHandler logger SQLiteEnv ()
-doWriteRow wt d k v = case d of
-    (UserTables _) -> writeUser wt d k v
+doWriteRow mbh wt d k v = case d of
+    (UserTables _) -> writeUser mbh wt d k v
     _ -> writeSys d k v
 
 doKeys
@@ -529,6 +539,9 @@ clearPendingTxState = do
         . set bsPendingTx Nothing
     resetTemp
 
+clearPendingBlocks :: BlockHandler logger SQLiteEnv ()
+clearPendingBlocks = undefined -- modify' $ set bsPendingBlocks HashMap.empty
+
 doBegin :: (Logger logger) => ExecutionMode -> BlockHandler logger SQLiteEnv (Maybe TxId)
 doBegin m = do
     logger <- view bdbenvLogger
@@ -597,6 +610,19 @@ toTxLog d key value =
             Just v ->
               return $! TxLog (asString d) (fromUtf8 key) v
 
+memBlockHistoryInsert :: BlockHeight -> BlockHash -> TxId -> BlockHandler logger SQLiteEnv ()
+memBlockHistoryInsert bh hsh t = do
+    (BlockDbEnv _ _ pbs) <- ask
+
+    blocks <- liftIO $ readMVar pbs
+    liftIO $ putStrLn $ "memBlockHistoryInsert before blocks: " ++ show blocks
+
+    liftIO $ putStrLn $ "INSERTED NEW MEMORY BLOCK AT " ++ show (bh, hsh, t)
+    liftIO $ modifyMVar_ pbs $ \blocks -> pure $ HashMap.insert (bh, hsh) t blocks
+
+    blocks' <- liftIO $ readMVar pbs
+    liftIO $ putStrLn $ "memBlockHistoryInsert after blocks: " ++ show blocks'
+
 blockHistoryInsert :: BlockHeight -> BlockHash -> TxId -> BlockHandler logger SQLiteEnv ()
 blockHistoryInsert bh hsh t = do
     liftIO $ putStrLn $ "INSERTED NEW BLOCK AT " ++ show (bh, hsh, t)
@@ -617,7 +643,7 @@ blockHistoryInsert bh hsh t = do
           go _ = fail "impossible"
 
         r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
-        print r'
+        print ("BLOCKS: 1: " :: String, r')
 
   where
     stmt =
@@ -800,6 +826,7 @@ handlePossibleRewind v cid bRestore hsh = do
         !txid <- case r of
             SInt x -> return x
             _ -> error "Chainweb.Pact.ChainwebPactDb.handlePossibleRewind.newChildBlock: failed to match SInt"
+        liftIO $ putStrLn $ "handlePossibleRewind: newChildBlock: setting new txid " ++ (show txid)
         assign bsTxId (fromIntegral txid)
         return $ fromIntegral txid
       where msg = "handlePossibleRewind: newChildBlock: error finding txid"
@@ -812,6 +839,7 @@ handlePossibleRewind v cid bRestore hsh = do
             droppedtbls <- dropTablesAtRewind bh db
             vacuumTablesAtRewind bh endingtx droppedtbls db
         deleteHistory bh
+        liftIO $ putStrLn $ "handlePossibleRewind: rewindBlock: setting new txid " ++ (show endingtx)
         assign bsTxId endingtx
         clearTxIndex
         return endingtx
