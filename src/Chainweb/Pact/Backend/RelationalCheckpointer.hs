@@ -241,17 +241,17 @@ doReadRestoreBegin v cid dbenv rodbenv bps (bh, bhash) = do
           liftIO $ putStrLn $ "GOT THE ENDING TX " ++ show x
           pure x
         Nothing -> callDb "doReadRestoreBegin" $ \db -> do
-          let
-            qtext' = "SELECT blockheight, hash FROM BlockHistory \
-                    \ ORDER BY blockheight DESC LIMIT 10"
+          -- let
+          --   qtext' = "SELECT blockheight, hash FROM BlockHistory \
+          --           \ ORDER BY blockheight DESC LIMIT 10"
 
-            go [SInt hgt, SBlob blob] =
-                let hash = either error id $ runGetEitherS decodeBlockHash blob
-                in return (fromIntegral hgt :: Integer, hash :: BlockHash)
-            go _ = fail "impossible"
+          --   go [SInt hgt, SBlob blob] =
+          --       let hash = either error id $ runGetEitherS decodeBlockHash blob
+          --       in return (fromIntegral hgt :: Integer, hash :: BlockHash)
+          --   go _ = fail "impossible"
 
-          r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
-          print ("BLOCKS: 2: " :: String, r')
+          -- r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
+          -- print ("BLOCKS: 2: " :: String, r')
 
           TxId . fromIntegral <$> getEndTxId db bh' bhash
 
@@ -352,17 +352,17 @@ doDiscard dbenv = runBlockEnv dbenv $ do
 doGetLatest :: Db logger -> IO (Maybe (BlockHeight, BlockHash))
 doGetLatest dbenv =
     runBlockEnv dbenv $ callDb "getLatestBlock" $ \db -> do
-        let
-          qtext' = "SELECT blockheight, hash FROM BlockHistory \
-                  \ ORDER BY blockheight DESC LIMIT 10"
+        -- let
+        --   qtext' = "SELECT blockheight, hash FROM BlockHistory \
+        --           \ ORDER BY blockheight DESC LIMIT 10"
 
-          go' [SInt hgt, SBlob blob] =
-              let hash = either error id $ runGetEitherS decodeBlockHash blob
-              in return (fromIntegral hgt :: Integer, hash :: BlockHash)
-          go' _ = fail "impossible"
+        --   go' [SInt hgt, SBlob blob] =
+        --       let hash = either error id $ runGetEitherS decodeBlockHash blob
+        --       in return (fromIntegral hgt :: Integer, hash :: BlockHash)
+        --   go' _ = fail "impossible"
 
-        r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go'
-        print ("BLOCKS: 3: " :: String, r')
+        -- r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go'
+        -- print ("BLOCKS: 3: " :: String, r')
 
         r <- qry_ db qtext [RInt, RBlob] >>= mapM go
         case r of

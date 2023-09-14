@@ -99,17 +99,17 @@ mempoolTestSuite db genesisBlock = testGroupSch "Mempool Consensus Tests"
 pactTestSuite :: RocksDb -> ScheduledTest
 pactTestSuite rdb = testGroupSch "Chainweb-Pact Tests"
     $ schedule Sequential
-        -- [ Chainweb.Test.Pact.PactExec.tests
-        -- , ScheduledTest "DbCacheTests" Chainweb.Test.Pact.DbCacheTest.tests
-        -- , Chainweb.Test.Pact.Checkpointer.tests
-        [ Chainweb.Test.Pact.PactMultiChainTest.tests
-        -- , Chainweb.Test.Pact.PactSingleChainTest.tests rdb
-        -- , Chainweb.Test.Pact.RemotePactTest.tests rdb
-        -- , Chainweb.Test.Pact.PactReplay.tests rdb
-        -- , Chainweb.Test.Pact.ModuleCacheOnRestart.tests rdb
-        -- , Chainweb.Test.Pact.TTL.tests rdb
-        -- , Chainweb.Test.Pact.RewardsTest.tests
-        -- , Chainweb.Test.Pact.NoCoinbase.tests
+        [ Chainweb.Test.Pact.PactExec.tests
+        , ScheduledTest "DbCacheTests" Chainweb.Test.Pact.DbCacheTest.tests
+        , Chainweb.Test.Pact.Checkpointer.tests
+        , Chainweb.Test.Pact.PactMultiChainTest.tests
+        , Chainweb.Test.Pact.PactSingleChainTest.tests rdb
+        , Chainweb.Test.Pact.RemotePactTest.tests rdb
+        , Chainweb.Test.Pact.PactReplay.tests rdb
+        , Chainweb.Test.Pact.ModuleCacheOnRestart.tests rdb
+        , Chainweb.Test.Pact.TTL.tests rdb
+        , Chainweb.Test.Pact.RewardsTest.tests
+        , Chainweb.Test.Pact.NoCoinbase.tests
         ]
 
 rosettaTestSuite :: RocksDb -> ScheduledTest

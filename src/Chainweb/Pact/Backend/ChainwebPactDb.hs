@@ -158,7 +158,7 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         -> (Utf8 -> BS.ByteString -> MaybeT (BlockHandler logger SQLiteEnv) v)
         -> BlockHandler logger SQLiteEnv (Maybe v)
     lookupWithKey key checkCache = do
-        liftIO $ putStrLn $ "lookupWithKey " ++ show (key, mbh)
+        -- liftIO $ putStrLn $ "lookupWithKey " ++ show (key, mbh)
         pds <- getPendingData
         let lookPD = foldr1 (<|>) $ map (lookupInPendingData key) pds
         let lookDB = lookupInDb key checkCache
@@ -171,9 +171,9 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         -> MaybeT (BlockHandler logger SQLiteEnv) v
     lookupInPendingData (Utf8 rowkey) p = do
         let deltaKey = SQLiteDeltaKey tableNameBS rowkey
-        liftIO $ putStrLn $ "lookupInPendingData " ++ show (rowkey, mbh)
+        -- liftIO $ putStrLn $ "lookupInPendingData " ++ show (rowkey, mbh)
         ddata <- fmap _deltaData <$> MaybeT (return $ HashMap.lookup deltaKey (_pendingWrites p))
-        liftIO $ putStrLn $ "lookupInPendingData got data " ++ show (rowkey, ddata, mbh)
+        -- liftIO $ putStrLn $ "lookupInPendingData got data " ++ show (rowkey, ddata, mbh)
         if null ddata
             -- should be impossible, but we'll check this case
             then mzero
@@ -194,7 +194,7 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         result <- lift $ callDb "doReadRow"
                        $ \db -> qry db queryStmt ([SText rowkey] ++ blockLimitParam) [RBlob]
 
-        liftIO $ putStrLn $ "lookupInDb " ++ show (rowkey, result, mbh)
+        -- liftIO $ putStrLn $ "lookupInDb " ++ show (rowkey, result, mbh)
         case result of
             [] -> mzero
             [[SBlob a]] -> checkCache rowkey a
@@ -335,7 +335,7 @@ writeUser mbh wt d k rowdata@(RowData _ row) = gets _bsTxId >>= go
       where
         upd (RowData oldV oldrow) = do
             let row' = RowData oldV $ ObjectMap (M.union (_objectMap row) (_objectMap oldrow))
-            liftIO $ putStrLn $ "writeUser.upd old row and new row " ++ show (oldrow, row')
+            -- liftIO $ putStrLn $ "writeUser.upd old row and new row " ++ show (oldrow, row')
             recordPendingUpdate (convRowKey k) tn txid row'
             return row'
 
@@ -615,17 +615,17 @@ memBlockHistoryInsert bh hsh t = do
     (BlockDbEnv _ _ pbs) <- ask
 
     blocks <- liftIO $ readMVar pbs
-    liftIO $ putStrLn $ "memBlockHistoryInsert before blocks: " ++ show blocks
+    -- liftIO $ putStrLn $ "memBlockHistoryInsert before blocks: " ++ show blocks
 
-    liftIO $ putStrLn $ "INSERTED NEW MEMORY BLOCK AT " ++ show (bh, hsh, t)
+    -- liftIO $ putStrLn $ "INSERTED NEW MEMORY BLOCK AT " ++ show (bh, hsh, t)
     liftIO $ modifyMVar_ pbs $ \blocks -> pure $ HashMap.insert (bh, hsh) t blocks
 
-    blocks' <- liftIO $ readMVar pbs
-    liftIO $ putStrLn $ "memBlockHistoryInsert after blocks: " ++ show blocks'
+    -- blocks' <- liftIO $ readMVar pbs
+    -- liftIO $ putStrLn $ "memBlockHistoryInsert after blocks: " ++ show blocks'
 
 blockHistoryInsert :: BlockHeight -> BlockHash -> TxId -> BlockHandler logger SQLiteEnv ()
 blockHistoryInsert bh hsh t = do
-    liftIO $ putStrLn $ "INSERTED NEW BLOCK AT " ++ show (bh, hsh, t)
+    -- liftIO $ putStrLn $ "INSERTED NEW BLOCK AT " ++ show (bh, hsh, t)
     callDb "blockHistoryInsert" $ \db -> do
         exec' db stmt
             [ SInt (fromIntegral bh)
@@ -633,17 +633,17 @@ blockHistoryInsert bh hsh t = do
             , SInt (fromIntegral t)
             ]
 
-        let
-          qtext' = "SELECT blockheight, hash FROM BlockHistory \
-                  \ ORDER BY blockheight DESC LIMIT 10"
+        -- let
+        --   qtext' = "SELECT blockheight, hash FROM BlockHistory \
+        --           \ ORDER BY blockheight DESC LIMIT 10"
 
-          go [SInt hgt, SBlob blob] =
-              let hash = either error id $ runGetEitherS decodeBlockHash blob
-              in return (fromIntegral hgt :: Integer, hash :: BlockHash)
-          go _ = fail "impossible"
+        --   go [SInt hgt, SBlob blob] =
+        --       let hash = either error id $ runGetEitherS decodeBlockHash blob
+        --       in return (fromIntegral hgt :: Integer, hash :: BlockHash)
+        --   go _ = fail "impossible"
 
-        r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
-        print ("BLOCKS: 1: " :: String, r')
+        -- r' <- qry_ db qtext' [RInt, RBlob] >>= mapM go
+        -- print ("BLOCKS: 1: " :: String, r')
 
   where
     stmt =
@@ -826,7 +826,7 @@ handlePossibleRewind v cid bRestore hsh = do
         !txid <- case r of
             SInt x -> return x
             _ -> error "Chainweb.Pact.ChainwebPactDb.handlePossibleRewind.newChildBlock: failed to match SInt"
-        liftIO $ putStrLn $ "handlePossibleRewind: newChildBlock: setting new txid " ++ (show txid)
+        -- liftIO $ putStrLn $ "handlePossibleRewind: newChildBlock: setting new txid " ++ (show txid)
         assign bsTxId (fromIntegral txid)
         return $ fromIntegral txid
       where msg = "handlePossibleRewind: newChildBlock: error finding txid"
@@ -839,7 +839,7 @@ handlePossibleRewind v cid bRestore hsh = do
             droppedtbls <- dropTablesAtRewind bh db
             vacuumTablesAtRewind bh endingtx droppedtbls db
         deleteHistory bh
-        liftIO $ putStrLn $ "handlePossibleRewind: rewindBlock: setting new txid " ++ (show endingtx)
+        -- liftIO $ putStrLn $ "handlePossibleRewind: rewindBlock: setting new txid " ++ (show endingtx)
         assign bsTxId endingtx
         clearTxIndex
         return endingtx

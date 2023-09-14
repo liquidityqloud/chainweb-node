@@ -232,7 +232,7 @@ withCheckpointerWithoutRewind target caller act = do
         -- TODO: _cpSave is a complex call. If any thing in there throws
         -- an exception it would result in a pending tx.
         liftIO $! _cpSave checkPointer $ _blockHash header
-        liftIO $ putStrLn $ "Saving header with target at " ++ (show ((_blockHeight . _parentHeader) <$> target) ++ " called by " ++ T.unpack caller ++  " " ++ (show header))
+        -- liftIO $ putStrLn $ "Saving header with target at " ++ (show ((_blockHeight . _parentHeader) <$> target) ++ " called by " ++ T.unpack caller ++  " " ++ (show header))
         setParentHeader (caller <> ".withCheckpointerWithoutRewind.saveTx") (ParentHeader header)
 
 -- | 'withCheckpointer' but using the cached parent header for target.
