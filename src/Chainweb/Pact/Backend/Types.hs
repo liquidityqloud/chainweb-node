@@ -51,6 +51,8 @@ module Chainweb.Pact.Backend.Types
     , emptySQLitePendingData
 
     , BlockState(..)
+    , BlockPendingState(..)
+    , emptyBlockPendingState
     , initBlockState
     , bsBlockHeight
     , bsMode
@@ -228,6 +230,11 @@ data BlockState = BlockState
     , _bsModuleCache :: !(DbCache PersistModuleData)
     }
 
+newtype BlockPendingState = BlockPendingState (SQLitePendingData, Maybe SQLitePendingData)
+
+emptyBlockPendingState :: BlockPendingState
+emptyBlockPendingState = BlockPendingState (emptySQLitePendingData, Nothing)
+
 emptySQLitePendingData :: SQLitePendingData
 emptySQLitePendingData = SQLitePendingData mempty mempty mempty mempty
 
@@ -306,11 +313,11 @@ data Checkpointer logger = Checkpointer
       --
       -- TODO: Under which circumstances does this return 'Nothing'?
 
-    , _cpReadRestoreBegin :: !((BlockHeight, BlockHash) -> IO (PactDbEnv' logger))
+    , _cpReadRestoreBegin :: !(BlockPendingState -> (BlockHeight, BlockHash) -> IO (PactDbEnv' logger))
       -- ^ starts ReadBlock savepoint for read-only transactions
       -- prerequisite: (BlockHeight - 1, ParentHash) is a direct ancestor of
       -- the "latest block"
-    , _cpReadRestoreEnd :: !(IO ())
+    , _cpReadRestoreEnd :: !(IO BlockPendingState)
       -- ^ closes ReadBlock savepoint discarding any changes
     , _cpMemSave :: !((BlockHeight, BlockHash) -> IO ())
 

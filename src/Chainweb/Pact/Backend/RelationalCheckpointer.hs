@@ -191,9 +191,10 @@ doReadRestoreBegin :: (Logger logger)
   -> ChainId
   -> Db logger
   -> Db logger
+  -> BlockPendingState
   -> (BlockHeight, BlockHash)
   -> IO (PactDbEnv' logger)
-doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
+doReadRestoreBegin v cid dbenv rodbenv bps (bh, bhash) = do
     let bh' = bh - 1
     -- copy data from the real dbenv to read-only dbenv
     -- dbContent <- readMVar dbenv
@@ -210,7 +211,10 @@ doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
       pure $ blocks -- $ HashMap.lookup (bh, bhash) blocks
       -- liftIO $ putStrLn $ "doReadRestoreBegin.runBlockEnv.blocks: " ++ show blocks
 
-    liftIO $ putStrLn $ "doReadRestoreBegin.mEndTx' blocks: " ++ (show mEndTx')
+    -- liftIO $ putStrLn $ "doReadRestoreBegin.mEndTx' blocks: " ++ (show mEndTx')
+
+    let BlockPendingState (bpsBlock, bpsTx) = bps
+    modifyMVar_ rodbenv (\(BlockEnv db bs) -> pure (BlockEnv db (bs { _bsPendingBlock = bpsBlock, _bsPendingTx = bpsTx} )))
 
     runBlockEnv rodbenv $ do
       -- clearPendingBlocks
@@ -218,7 +222,7 @@ doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
       setModuleNameFix
       setSortedKeys
       setLowerCaseTables
-      clearPendingTxState
+      -- clearPendingTxState
       beginSavepoint ReadBlock
 
       (BlockDbEnv _ _ pbs) <- ask
@@ -230,6 +234,7 @@ doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
 
       -- rewind the block state to the given block height
 
+      -- let endTxId = undefined
 
       endTxId <- case mEndTx of
         Just x -> do
@@ -254,12 +259,12 @@ doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
       -- liftIO $ putStrLn $ "doReadRestoreBegin.blocks: " ++ show blocks
 
       txIddd <- gets _bsTxId
-      liftIO $ putStrLn $ "doReadRestoreBegin.ending tx WAS and BECOME: " ++ show (txIddd, endTxId)
+      -- liftIO $ putStrLn $ "doReadRestoreBegin.ending tx WAS and BECOME: " ++ show (txIddd, endTxId)
 
       assign bsBlockHeight bh'
       assign bsTxId endTxId
 
-      liftIO $ putStrLn $ "doReadRestoreBegin: " ++ (show (bh, endTxId))
+      -- liftIO $ putStrLn $ "doReadRestoreBegin: " ++ (show (bh, endTxId))
 
       return $! PactDbEnv' $! PactDbEnv (readOnlyChainwebPactDb bh) rodbenv
   where
@@ -268,8 +273,9 @@ doReadRestoreBegin v cid dbenv rodbenv (bh, bhash) = do
     setSortedKeys = bsSortedKeys .= pact420 v cid bh
     setLowerCaseTables = bsLowerCaseTables .= chainweb217Pact v cid bh
 
-doReadRestoreEnd :: Db logger -> IO ()
-doReadRestoreEnd db = runBlockEnv db $ do
+doReadRestoreEnd :: Db logger -> IO BlockPendingState
+doReadRestoreEnd db = do
+  runBlockEnv db $ do
     txIddd <- gets _bsTxId
     liftIO $ putStrLn $ "doReadRestoreEnd.ending tx IS: " ++ show txIddd
 
@@ -281,6 +287,8 @@ doReadRestoreEnd db = runBlockEnv db $ do
     -- (as empty transaction). <https://www.sqlite.org/lang_savepoint.html>
     --
     commitSavepoint ReadBlock
+  (BlockEnv _ bs) <- readMVar db
+  pure $ BlockPendingState (_bsPendingBlock bs, _bsPendingTx bs)
 
 doMemSave :: Db logger -> (BlockHeight, BlockHash) -> IO ()
 doMemSave dbenv (height, hash) = runBlockEnv dbenv $ do
