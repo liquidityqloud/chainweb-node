@@ -208,9 +208,15 @@ withCheckpointerWithoutRewind target caller act = do
     unlessM ((<= 1) <$> asks _psCheckpointerDepth) $ do
         error $ "Code invariant violation: to many nested calls of withCheckpointerRewind. Please report this as a bug."
 
+    currentParent <- use psParentHeader
+    liftIO $ putStrLn $ "!!! withCheckpointerWithoutRewind: currentParent " ++ show (_blockHeight $ _parentHeader currentParent)
+
     case target of
         Just h -> setParentHeader (caller <> ".withCheckpointerWithoutRewind") h
         Nothing -> return ()
+
+    newParent <- use psParentHeader
+    liftIO $ putStrLn $ "!!! withCheckpointerWithoutRewind: restoring to " ++ show (_blockHeight $ _parentHeader newParent)
 
     local (over psCheckpointerDepth succ) $ mask $ \restore -> do
         cenv <- restore $ liftIO $! _cpRestore checkPointer checkpointerTarget
@@ -322,11 +328,12 @@ withCheckpointerWithoutReadRewind target@(ParentHeader parent) blockstate caller
         try (restore (act cenv)) >>= \case
             Left !e -> finalize cp currentParent >> throwM @_ @SomeException e
             Right !result -> do
+                -- setParentHeader "withCheckpointerWithoutReadRewind" currentParent
                 blockstate <- finalize cp currentParent
                 return (result, blockstate)
     where
-        finalize cp _ = do
-            -- setParentHeader "withCheckpointerWithoutReadRewind" p
+        finalize cp p = do
+            setParentHeader "withCheckpointerWithoutReadRewind" p
             liftIO $! _cpReadRestoreEnd cp
 
 -- | Run a batch of checkpointer operations, possibly involving the evaluation
@@ -483,9 +490,9 @@ rewindToRead _ (ParentHeader parent) = do
     (ParentHeader currentParent) <- use psParentHeader
 
     -- skip if the checkpointer is already at the target.
-    (_, lastHash) <- getCheckpointer >>= liftIO . _cpGetLatestBlock >>= \case
-        Nothing -> throwM NoBlockValidatedYet
-        Just p -> return p
+    -- (_, lastHash) <- getCheckpointer >>= liftIO . _cpGetLatestBlock >>= \case
+    --     Nothing -> throwM NoBlockValidatedYet
+    --     Just p -> return p
 
     -- liftIO $ putStrLn $ "rewindToRead: (lastHash, parentHash, currentParent) " ++ (show (lastHash, parentHash, _blockHash currentParent))
 
@@ -586,21 +593,6 @@ fastForwardRead
 fastForwardRead bs (target, block) = do
     -- liftIO $ putStrLn $ "fastForwardingRead: " ++ (show (_blockHeight $ _parentHeader target)) --, _blockHeight block, _blockHash block))
     -- liftIO $ putStrLn $ "fastForwardingReadHashes: " ++ (show (_blockHash $ _parentHeader target, _blockHash block))
-    -- This does a restore, i.e. it rewinds the checkpointer back in
-    -- history, if needed.
-    -- withCheckpointerWithoutRewind (Just target) "fastForward" $ \pdbenv -> do
-    --     payloadDb <- asks _psPdb
-    --     payload <- liftIO $ tableLookup payloadDb bpHash >>= \case
-    --         Nothing -> throwM $ PactInternalError
-    --             $ "Checkpointer.rewindTo.fastForwardRead: lookup of payload failed"
-    --             <> ". BlockPayloadHash: " <> encodeToText bpHash
-    --             <> ". Block: "<> encodeToText (ObjectEncoded block)
-    --         Just x -> return $ payloadWithOutputsToPayloadData x
-    --     liftIO $ putStrLn "fastForward execBlock!!!!!"
-
-    --     T2 _ (Transactions txs _) <- execBlock block payload pdbenv
-    --     liftIO $ putStrLn $ "fastForward transactions: " ++ (show $ V.map (_crTxId . snd) txs)
-    --     return $! Save block ()
 
     (_, newBs) <- withCheckpointerWithoutReadRewind target bs "fastForwardRead" $ \pdbenv -> do
         payloadDb <- asks _psPdb
