@@ -217,19 +217,16 @@ doReadRestoreBegin v cid dbenv rodbenv bps (bh, bhash) = do
     modifyMVar_ rodbenv (\(BlockEnv db bs) -> pure (BlockEnv db (bs { _bsPendingBlock = bpsBlock, _bsPendingTx = bpsTx} )))
 
     runBlockEnv rodbenv $ do
-      -- clearPendingBlocks
-
       setModuleNameFix
       setSortedKeys
       setLowerCaseTables
-      -- clearPendingTxState
       beginSavepoint ReadBlock
 
       (BlockDbEnv _ _ pbs) <- ask
       blocks <- liftIO $ readMVar pbs
 
       let mEndTx = HashMap.lookup (bh', bhash) blocks
-      liftIO $ putStrLn $ "doReadRestoreBegin.mEndTx blocks: " ++ show (bh, bhash, blocks)
+      -- liftIO $ putStrLn $ "doReadRestoreBegin.mEndTx blocks: " ++ show (bh, bhash, blocks)
 
 
       -- rewind the block state to the given block height
@@ -238,7 +235,7 @@ doReadRestoreBegin v cid dbenv rodbenv bps (bh, bhash) = do
 
       endTxId <- case mEndTx of
         Just x -> do
-          liftIO $ putStrLn $ "GOT THE ENDING TX " ++ show x
+          -- liftIO $ putStrLn $ "GOT THE ENDING TX " ++ show x
           pure x
         Nothing -> callDb "doReadRestoreBegin" $ \db -> do
           -- let
@@ -277,7 +274,7 @@ doReadRestoreEnd :: Db logger -> IO BlockPendingState
 doReadRestoreEnd db = do
   runBlockEnv db $ do
     txIddd <- gets _bsTxId
-    liftIO $ putStrLn $ "doReadRestoreEnd.ending tx IS: " ++ show txIddd
+    -- liftIO $ putStrLn $ "doReadRestoreEnd.ending tx IS: " ++ show txIddd
 
 
     rollbackSavepoint ReadBlock
@@ -301,7 +298,7 @@ doSave dbenv hash = runBlockEnv dbenv $ do
     height <- gets _bsBlockHeight
     runPending height
     nextTxId <- gets _bsTxId
-    liftIO $ putStrLn $ "doSave: nextTxId WAS AND IS " ++ show (nextTxId', nextTxId)
+    -- liftIO $ putStrLn $ "doSave: nextTxId WAS AND IS " ++ show (nextTxId', nextTxId)
     blockHistoryInsert height hash nextTxId
 
     -- FIXME: if any of the above fails with an exception the following isn't

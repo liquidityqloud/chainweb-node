@@ -493,7 +493,7 @@ chainweb215Test = do
   -- run past genesis, upgrades
   runToHeight 30 -- 1->30
 
-  liftIO $ putStrLn "GOT TO HEIGHT 30"
+  -- liftIO $ putStrLn "GOT TO HEIGHT 30"
 
   -- execute pre-fork xchain transfer (blocc0)
   runBlockTest
@@ -503,24 +503,24 @@ chainweb215Test = do
       ]
   send0 <- txResult 0
 
-  liftIO $ putStrLn "EXECUTED PRE FORK"
+  -- liftIO $ putStrLn "EXECUTED PRE FORK"
 
   -- run past v5 upgrade, build proof of pre-fork xchain for tx31_0, save cut
   resetMempool
 
-  liftIO $ putStrLn "RESET MEMPOOL"
+  -- liftIO $ putStrLn "RESET MEMPOOL"
 
   runToHeight 34
 
-  liftIO $ putStrLn "GOT TO HEIGHT 34"
+  -- liftIO $ putStrLn "GOT TO HEIGHT 34"
 
   savedCut <- currentCut
 
-  liftIO $ putStrLn "GOT THE CURRENT CUT"
+  -- liftIO $ putStrLn "GOT THE CURRENT CUT"
 
   runToHeight 41
 
-  liftIO $ putStrLn "GOT TO HEIGHT 41"
+  -- liftIO $ putStrLn "GOT TO HEIGHT 41"
 
 
   xproof <- buildXProof cid 31 0 send0
@@ -548,35 +548,35 @@ chainweb215Test = do
   currCut <- currentCut
 
     -- rewind to saved cut 43
-  liftIO $ putStrLn "REWINDING TO CUT AT 34"
+  -- liftIO $ putStrLn "REWINDING TO CUT AT 34"
 
 
   rewindTo savedCut
 
-  liftIO $ putStrLn "GOT TO HEIGHT 34, COMING TO 43"
+  -- liftIO $ putStrLn "GOT TO HEIGHT 34, COMING TO 43"
 
   runToHeight 43
 
-  liftIO $ putStrLn "GOT TO HEIGHT 43"
+  -- liftIO $ putStrLn "GOT TO HEIGHT 43"
 
 
   -- resume on original cut
   rewindTo currCut
 
-  liftIO $ putStrLn "REWINDED TO CURRCUT"
+  -- liftIO $ putStrLn "REWINDED TO CURRCUT"
 
 
   -- run until post-fork xchain proof exists
   resetMempool
-  liftIO $ putStrLn "RUNNING TO HEIGHT 50"
+  -- liftIO $ putStrLn "RUNNING TO HEIGHT 50"
   runToHeight 50
-  liftIO $ putStrLn "RUNNED TO HEIGHT 50"
+  -- liftIO $ putStrLn "RUNNED TO HEIGHT 50"
 
   savedCut1 <- currentCut
-  liftIO $ putStrLn "RUNNING TO HEIGHT 52"
+  -- liftIO $ putStrLn "RUNNING TO HEIGHT 52"
   runToHeight 52
 
-  liftIO $ putStrLn "BUILDING XPROOF"
+  -- liftIO $ putStrLn "BUILDING XPROOF"
 
   xproof1 <- buildXProof cid 42 0 send1
 

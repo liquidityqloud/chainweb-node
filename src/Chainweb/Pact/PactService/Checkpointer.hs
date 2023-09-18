@@ -286,11 +286,11 @@ withCheckpointerReadRewind
     -> (PactDbEnv' logger -> PactServiceM logger tbl a)
     -> PactServiceM logger tbl a
 withCheckpointerReadRewind p caller act = do
-    liftIO $ putStrLn $ "withCheckpointerReadRewind: parentHeader " ++ (show $ _blockHeight $ _parentHeader p)
+    -- liftIO $ putStrLn $ "withCheckpointerReadRewind: parentHeader " ++ (show $ _blockHeight $ _parentHeader p)
     blockstate <- tracePactServiceM "withCheckpointerReadRewind.rewindTo" (_parentHeader p) 0 $
         rewindToRead caller p
         -- This updates '_psParentHeader'
-    liftIO $ putStrLn $ "withCheckpointerReadRewind: START withCheckpointerWithoutReadRewind!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    -- liftIO $ putStrLn $ "withCheckpointerReadRewind: START withCheckpointerWithoutReadRewind!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     (r, _) <- withCheckpointerWithoutReadRewind p blockstate caller act
     return r
 
@@ -311,9 +311,11 @@ withCheckpointerWithoutReadRewind target@(ParentHeader parent) blockstate caller
         error $ "Code invariant violation: to many nested calls of withCheckpointerWithoutReadRewind. Please report this as a bug."
 
     currentParent <- use psParentHeader
+    liftIO $ putStrLn $ "withCheckpointerWithoutReadRewind: currentParent " ++ show (_blockHeight $ _parentHeader currentParent)
 
     local (over psCheckpointerDepth succ) $ mask $ \restore -> do
         cenv <- restore $ do
+            liftIO $ putStrLn $ "withCheckpointerWithoutReadRewind: restoring to " ++ show (_blockHeight parent)
             setParentHeader "withCheckpointerWithoutReadRewind" (ParentHeader parent)
             liftIO $! _cpReadRestoreBegin cp blockstate (_blockHeight parent + 1, _blockHash parent)
 
@@ -403,7 +405,7 @@ rewindTo caller rewindLimit (Just (ParentHeader parent)) = do
         Nothing -> throwM NoBlockValidatedYet
         Just p -> return p
 
-    liftIO $ putStrLn $ "rewindTo: (lastHash, parentHash) " ++ (show (lastHash, parentHash))
+    -- liftIO $ putStrLn $ "rewindTo: (lastHash, parentHash) " ++ (show (lastHash, parentHash))
 
     if lastHash == parentHash
       then do
@@ -412,10 +414,10 @@ rewindTo caller rewindLimit (Just (ParentHeader parent)) = do
         -- 'rewindTo'. In the @else@ branch this is taken care of by the call to
         -- 'withCheckPointerWithoutRewind'.
         setParentHeader "rewindTo" (ParentHeader parent)
-        liftIO $ putStrLn $ "rewindTo: " ++ (show (_blockHeight $ parent))
+        -- liftIO $ putStrLn $ "rewindTo: " ++ (show (_blockHeight $ parent))
       else do
         lastHeader <- findLatestValidBlock >>= maybe failNonGenesisOnEmptyDb return
-        liftIO $ putStrLn $ "rewindTo: lastHeader " ++ (show lastHeader)
+        -- liftIO $ putStrLn $ "rewindTo: lastHeader " ++ (show lastHeader)
         logInfo $ "rewind from last to checkpointer target"
             <> ". last height: " <> sshow (_blockHeight lastHeader)
             <> "; last hash: " <> blockHashToText (_blockHash lastHeader)
@@ -439,7 +441,7 @@ rewindTo caller rewindLimit (Just (ParentHeader parent)) = do
 
         if commonAncestor == parent
           then do
-            liftIO $ putStrLn $ "playFork: " ++ (show (_blockHeight parent))
+            -- liftIO $ putStrLn $ "playFork: " ++ (show (_blockHeight parent))
 
             -- liftIO $ putStrLn $ "rewindTo.playFork: Saving header at " ++ (show commonAncestor)
 
@@ -485,12 +487,12 @@ rewindToRead _ (ParentHeader parent) = do
         Nothing -> throwM NoBlockValidatedYet
         Just p -> return p
 
-    liftIO $ putStrLn $ "rewindToRead: (lastHash, parentHash, currentParent) " ++ (show (lastHash, parentHash, _blockHash currentParent))
+    -- liftIO $ putStrLn $ "rewindToRead: (lastHash, parentHash, currentParent) " ++ (show (lastHash, parentHash, _blockHash currentParent))
 
 
     lastHeader <- findLatestValidBlockSince (_blockHeight currentParent, _blockHash currentParent) >>= maybe failNonGenesisOnEmptyDb return
 
-    liftIO $ putStrLn $ "rewindToRead: lastHeader " ++ (show lastHeader)
+    -- liftIO $ putStrLn $ "rewindToRead: lastHeader " ++ (show lastHeader)
     logInfo $ "rewind from last to checkpointer target"
         <> ". last height: " <> sshow (_blockHeight lastHeader)
         <> "; last hash: " <> blockHashToText (_blockHash lastHeader)
@@ -512,14 +514,14 @@ rewindToRead _ (ParentHeader parent) = do
 
         if commonAncestor == parent
           then do
-            liftIO $ putStrLn $ "rewindToRead.playFork: " ++ (show (_blockHeight parent))
+            -- liftIO $ putStrLn $ "rewindToRead.playFork: " ++ (show (_blockHeight parent))
 
-            liftIO $ putStrLn $ "rewindToRead.playFork: Saving header at " ++ (show commonAncestor)
+            -- liftIO $ putStrLn $ "rewindToRead.playFork: Saving header at " ++ (show commonAncestor)
 
             setParentHeader "rewindToRead.playFork" (ParentHeader commonAncestor)
             return emptyBlockPendingState
           else do
-            liftIO $ putStrLn $ "rewindToRead.playFork: commonAncestor /= parent at " ++ (show (_blockHeight commonAncestor, _blockHash commonAncestor))
+            -- liftIO $ putStrLn $ "rewindToRead.playFork: commonAncestor /= parent at " ++ (show (_blockHeight commonAncestor, _blockHash commonAncestor))
 
             logInfo $ "rewindToRead.playFork"
                 <> ": checkpointer is at height: " <> sshow (_blockHeight lastHeader)
@@ -556,8 +558,8 @@ fastForward
     => (ParentHeader, BlockHeader)
     -> PactServiceM logger tbl ()
 fastForward (target, block) = do
-    liftIO $ putStrLn $ "fastForwarding: " ++ (show (_blockHeight $ _parentHeader target, _blockHeight block))
-    liftIO $ putStrLn $ "fastForwardingHashes: " ++ (show (_blockHash $ _parentHeader target, _blockHash block))
+    -- liftIO $ putStrLn $ "fastForwarding: " ++ (show (_blockHeight $ _parentHeader target, _blockHeight block))
+    -- liftIO $ putStrLn $ "fastForwardingHashes: " ++ (show (_blockHash $ _parentHeader target, _blockHash block))
     -- This does a restore, i.e. it rewinds the checkpointer back in
     -- history, if needed.
     withCheckpointerWithoutRewind (Just target) "fastForward" $ \pdbenv -> do
@@ -568,7 +570,7 @@ fastForward (target, block) = do
                 <> ". BlockPayloadHash: " <> encodeToText bpHash
                 <> ". Block: "<> encodeToText (ObjectEncoded block)
             Just x -> return $ payloadWithOutputsToPayloadData x
-        liftIO $ putStrLn "fastForward execBlock!!!!!"
+        -- liftIO $ putStrLn "fastForward execBlock!!!!!"
         void $ execBlock block payload pdbenv
         return $! Save block ()
     -- double check output hash here?
@@ -582,7 +584,7 @@ fastForwardRead
     -> (ParentHeader, BlockHeader)
     -> PactServiceM logger tbl BlockPendingState
 fastForwardRead bs (target, block) = do
-    liftIO $ putStrLn $ "fastForwardingRead: " ++ (show (_blockHeight $ _parentHeader target)) --, _blockHeight block, _blockHash block))
+    -- liftIO $ putStrLn $ "fastForwardingRead: " ++ (show (_blockHeight $ _parentHeader target)) --, _blockHeight block, _blockHash block))
     -- liftIO $ putStrLn $ "fastForwardingReadHashes: " ++ (show (_blockHash $ _parentHeader target, _blockHash block))
     -- This does a restore, i.e. it rewinds the checkpointer back in
     -- history, if needed.
@@ -608,12 +610,13 @@ fastForwardRead bs (target, block) = do
                 <> ". BlockPayloadHash: " <> encodeToText bpHash
                 <> ". Block: "<> encodeToText (ObjectEncoded block)
             Just x -> return $ payloadWithOutputsToPayloadData x
-        liftIO $ putStrLn "fastForwardRead execBlock!!!!!"
+        -- liftIO $ putStrLn "fastForwardRead execBlock!!!!!"
         -- void $ execBlock block payload pdbenv
         T2 _ (Transactions txs _) <- execBlock block payload pdbenv
-        liftIO $ putStrLn $ "fastForward transactions: " ++ (show $ V.map (_crTxId . snd) txs)
+        pure ()
+        -- liftIO $ putStrLn $ "fastForward transactions: " ++ (show $ V.map (_crTxId . snd) txs)
 
-    setParentHeader "fastForwardRead" (ParentHeader block)
+    -- setParentHeader "fastForwardRead" (ParentHeader block)
 
     cp <- getCheckpointer
     liftIO $ _cpMemSave cp (_blockHeight block, _blockHash block)
