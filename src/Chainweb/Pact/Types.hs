@@ -554,6 +554,7 @@ updateInitCache mc = get >>= \PactServiceState{..} -> do
         pbh = bf . _blockHeight . _parentHeader $ _psParentHeader
 
     v <- view psVersion
+    liftIO $ putStrLn $ "updateInitCache: at " ++ show pbh
 
     psInitCache .= case M.lookupLE pbh _psInitCache of
       Nothing -> M.singleton pbh mc

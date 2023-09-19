@@ -608,7 +608,7 @@ fastForwardRead bs (target, block) = do
         pure ()
         -- liftIO $ putStrLn $ "fastForward transactions: " ++ (show $ V.map (_crTxId . snd) txs)
 
-    -- setParentHeader "fastForwardRead" (ParentHeader block)
+    setParentHeader "fastForwardRead" (ParentHeader block)
 
     cp <- getCheckpointer
     liftIO $ _cpMemSave cp (_blockHeight block, _blockHash block)

@@ -63,6 +63,7 @@ import qualified Pact.JSON.Encode as J
 import qualified Pact.Parse as P
 import qualified Pact.Types.Command as P
 import Pact.Types.Exp (ParsedCode(..))
+import qualified Pact.JSON.Legacy.HashMap as LHM
 import Pact.Types.ExpParser (mkTextInfo, ParseEnv(..))
 import qualified Pact.Types.Hash as P
 import Pact.Types.RPC
@@ -354,6 +355,7 @@ runCoinbase False dbEnv miner enfCBFail usePrecomp mc = do
 
     reward <- liftIO $! minerReward v rs bh
 
+    liftIO $ putStrLn $ "runCoinbase" ++ (show $ LHM.keys $ _getModuleCache mc)
     (T2 cr upgradedCacheM) <- liftIO $ applyCoinbase v logger dbEnv miner reward txCtx enfCBFail usePrecomp mc
     mapM_ upgradeInitCache upgradedCacheM
     debugResult "runCoinbase" (P.crLogs %~ fmap J.Array $ cr)
@@ -417,6 +419,7 @@ applyPactCmd isGenesis env miner txTimeLimit cmd = StateT $ \(T2 mcache maybeBlo
     gasLimitedCmd =
       set cmdGasLimit newTxGasLimit (payloadObj <$> cmd)
     initialGas = initialGasOf (P._cmdPayload cmd)
+  liftIO $ putStrLn $ "applyPactCmd: mcache" ++ (show $ LHM.keys $ _getModuleCache mcache)
   handle onBuyGasFailure $ do
     T2 result mcache' <- do
       txCtx <- getTxContext (publicMetaOf gasLimitedCmd)
