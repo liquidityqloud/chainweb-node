@@ -45,5 +45,6 @@
         echo ${mkCheck "devShell" flake.devShell}
         echo works > $out
       '';
+      nixosModules.default = nix/nixos-module.nix;
     });
 }

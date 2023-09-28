@@ -1,0 +1,91 @@
+resetChainDatabases: false
+chainweb:
+  rosetta: false
+  onlySyncPact: false
+  allowReadsInLocal: true
+  headerStream: true
+  throttling:
+    local: 0.1
+    mining: 5
+    global: 1000.0
+    putPeer: 21
+  serviceApi:
+    payloadBatchLimit: 1000
+    interface: '*'
+    # Set via CLI arg: port: 1848
+  validateHashesOnReplay: true
+  backup:
+    api:
+      enabled: false
+      configuration: {}
+    directory: null
+  # Set via CLI arg: chainwebVersion: mainnet01
+  pactQueueSize: 2000
+  mining:
+    coordination:
+      enabled: false
+      updateStreamTimeout: 240
+      limit: 1200
+      updateStreamLimit: 2000
+      miners: []
+    nodeMining:
+      miner:
+        account: ''
+        predicate: keys-all
+        public-keys: []
+      enabled: false
+  minGasPrice: 1.0e-8
+  p2p:
+    peer:
+      certificateChainFile: null
+      key: null
+      interface: '*'
+      certificateChain: null
+      hostaddress:
+        hostname: 0.0.0.0
+        # Set via CLI arg: port: 1789
+      keyFile: null
+    maxPeerCount: 50
+    private: false
+    ignoreBootstrapNodes: false
+    maxSessionCount: 10
+    bootstrapReachability: 0.5
+    sessionTimeout: 240
+    peers: []
+  gasLimitOfBlock: 150000
+  reorgLimit: 480
+  mempoolP2p:
+    enabled: true
+    configuration:
+      pollInterval: 30
+      maxSessionCount: 6
+      sessionTimeout: 300
+  reintroTxs: true
+  cuts:
+    pruneChainDatabase: none
+    fetchTimeout: 3000000
+    initialBlockHeightLimit: null
+logging:
+  telemetryBackend:
+    enabled: true
+    configuration:
+      handle: stdout
+      color: auto
+      format: json
+  backend:
+    handle: stdout
+    color: auto
+    format: text
+  logger:
+    log_level: info
+    queue_size: 1000
+    exception_wait: 1000
+    exit_timeout: 1000000
+    scope: []
+    exception_limit: 10
+    policy: discard
+  clusterId: null
+  filter:
+    default-rate: 1
+    rules: []
+    default: debug

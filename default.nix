@@ -26,6 +26,7 @@ let haskellSrc = with nix-filter.lib; filter {
         "docs"
         "examples"
         (matchExt "nix")
+        "nix"
         "flake.lock"
         "cabal.project.freeze"
       ];
