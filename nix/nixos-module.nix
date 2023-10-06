@@ -16,10 +16,10 @@ let
     else
       echo "Initializing chainweb node data directory"
       TARGET=${cfg.dataDir}/0
-      mkdir -p $TARGET
+      ${pkgs.coreutils}/bin/mkdir -p $TARGET
 
       ${pkgs.awscli}/bin/aws s3 cp ${cfg.snapshotUrl} - \
-        | tar -xzvf - -C $TARGET
+        | ${pkgs.gnutar}/bin/tar -xzvf - -C $TARGET
     fi
   '';
 in
