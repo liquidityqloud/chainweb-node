@@ -90,7 +90,7 @@ in
     systemd.services.chainweb-node = {
       description = "Chainweb Node";
       after = [ "network.target" "chainweb-node-init.service" ];
-      wants = [ "chainweb-node-init.service" ];
+      requires = [ "chainweb-node-init.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "simple";
