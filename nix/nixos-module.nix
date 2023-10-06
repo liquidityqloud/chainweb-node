@@ -6,22 +6,25 @@
 with lib;
 let
   cfg = config.services.chainweb-node;
-  downloadCWNSnapshot = pkgs.writeScriptBin "downloadCWNSnapshot" ''
-    #!/bin/sh
-    set -e
+  downloadCWNSnapshot = pkgs.writeShellApplication {
+    name = "downloadCWNSnapshot";
+    runtimeInputs = with pkgs; [ awscli gnutar gzip coreutils ];
+    text = ''
+      set -e
 
-    if [ -f ${cfg.dataDir}/.init-done ]; then
-      echo "Chainweb node data directory already initialized, skipping"
-      exit 0
-    else
-      echo "Initializing chainweb node data directory"
-      TARGET=${cfg.dataDir}/0
-      ${pkgs.coreutils}/bin/mkdir -p $TARGET
+      if [ -f ${cfg.dataDir}/.init-done ]; then
+        echo "Chainweb node data directory already initialized, skipping"
+        exit 0
+      else
+        echo "Initializing chainweb node data directory"
+        TARGET=${cfg.dataDir}/0
+        mkdir -p $TARGET
 
-      ${pkgs.awscli}/bin/aws s3 cp ${cfg.snapshotUrl} - \
-        | ${pkgs.gnutar}/bin/tar -xzvf - -C $TARGET
-    fi
-  '';
+        aws s3 cp ${cfg.snapshotUrl} - \
+          | tar -xzvf - -C $TARGET
+      fi
+    '';
+  };
 in
 {
   options.services.chainweb-node = {
