@@ -193,13 +193,13 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         checkDbTableExists tableName
         -- TODO: speed this up, cache it?
         -- let tableExistsStmt =
-        --         "SELECT tablename FROM VersionedTableCreation WHERE createBlockheight <= ? AND tablename = ?"
+        --         "SELECT tablename FROM VersionedTableCreation WHERE createBlockheight < ? AND tablename = ?"
         -- case mbh of
         --     Just bh | isUserTable tableName -> do
         --         r <- callDb "doReadRow.tableExists" $ \db ->
         --             qry db tableExistsStmt [SInt $ fromIntegral bh, SText tableName] [RText]
-        --         -- liftIO $ print (tableName, r)
         --         case r of
+        --             -- TODO: try to throw a DbError more cleanly. comment this.
         --             [] -> void $ callDb "doReadRow" $ \db -> qry db "garbage query" [] []
         --             [[SText _]] -> return ()
         --             err -> internalError $ "doReadRow: what?"
@@ -400,8 +400,8 @@ doKeys mbh d = do
                     Just bh | isUserTable tn -> do
                         r <- callDb "doKeys.tableExists" $ \db ->
                             qry db tableExistsStmt [SInt $ fromIntegral bh - 1, SText tn] [RText]
-                        -- liftIO $ print (tableName, r)
                         case r of
+                            -- TODO: try to throw a DbError more cleanly. comment this.
                             [] -> void $ callDb "doKeys" $ \db -> qry db "garbage query" [] []
                             [[SText _]] -> return ()
                             err -> internalError $ "doKeys: what?"
