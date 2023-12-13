@@ -191,18 +191,18 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         -- there's no point in looking up the key.
         checkDbTableExists tableName
         -- TODO: speed this up, cache it?
-        let tableExistsStmt =
-                "SELECT tablename FROM VersionedTableCreation WHERE createBlockheight < ? AND tablename = ?"
-        case mbh of
-            Just bh | isUserTable tableName -> do
-                r <- callDb "doReadRow.tableExists" $ \db ->
-                    qry db tableExistsStmt [SInt $ fromIntegral bh, SText tableName] [RText]
-                -- liftIO $ print (tableName, r)
-                case r of
-                    [] -> void $ callDb "doReadRow" $ \db -> qry db "garbage query" [] []
-                    [[SText _]] -> return ()
-                    err -> internalError $ "doReadRow: what?"
-            _ -> return ()
+        -- let tableExistsStmt =
+        --         "SELECT tablename FROM VersionedTableCreation WHERE createBlockheight <= ? AND tablename = ?"
+        -- case mbh of
+        --     Just bh | isUserTable tableName -> do
+        --         r <- callDb "doReadRow.tableExists" $ \db ->
+        --             qry db tableExistsStmt [SInt $ fromIntegral bh, SText tableName] [RText]
+        --         -- liftIO $ print (tableName, r)
+        --         case r of
+        --             [] -> void $ callDb "doReadRow" $ \db -> qry db "garbage query" [] []
+        --             [[SText _]] -> return ()
+        --             err -> internalError $ "doReadRow: what?"
+        --     _ -> return ()
         let blockLimitParam = maybe [] (\(BlockHeight bh) -> [SInt $ fromIntegral bh - 1]) mbh
         result <- lift $ callDb "doReadRow"
                        $ \db -> qry db queryStmt ([SText rowkey] ++ blockLimitParam) [RBlob]
@@ -499,13 +499,18 @@ doCreateUserTable mbh tn@(TableName ttxt) mn = do
           [[SText rname]] ->
             case mbh of
                 Nothing -> return (lcTables || rname == t)
-                Just bh ->
+                Just bh -> do
+                    let
+                        stmt False =
+                            "SELECT DISTINCT tablename FROM VersionedTableCreation WHERE createBlockheight < ? AND tablename = ?;"
+                        stmt True =
+                            "SELECT DISTINCT tablename FROM VersionedTableCreation WHERE createBlockheight < ? AND lower(tablename)=lower(?);"
                     qry db
-                        "SELECT tablename FROM VersionedTableCreation WHERE createBlockheight < ? AND tablename = ?;"
-                        [SInt (fromIntegral bh), SText t]
+                        (stmt lcTables)
+                        [SInt (fromIntegral bh - 1), SText t]
                         [RText] <&> \case
-                        [[SText rname']] -> lcTables || rname == t
-                        [] -> False
+                            [] -> False
+                            _ -> lcTables || rname == t
           _ -> return False
 
     tableLookupStmt False =
