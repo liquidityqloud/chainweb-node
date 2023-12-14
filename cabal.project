@@ -59,6 +59,9 @@ package vault
 package yet-another-logger
     flags: -tbmqueue
 
+packages:
+    ../pact-core
+
 -- -------------------------------------------------------------------------- --
 -- Source Repository Packages
 --

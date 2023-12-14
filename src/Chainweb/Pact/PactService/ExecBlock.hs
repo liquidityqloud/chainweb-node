@@ -340,7 +340,7 @@ execTransactionsOnly miner ctxs (PactDbEnv' pactdbenv) txTimeLimit = do
 runCoinbase
     :: (Logger logger)
     => Bool
-    -> P.PactDbEnv p
+    -> (P.PactDbEnv p, CoreDb)
     -> Miner
     -> EnforceCoinbaseFailure
     -> CoinbaseUsePrecompiled
@@ -375,7 +375,7 @@ runCoinbase False dbEnv miner enfCBFail usePrecomp mc = do
 applyPactCmds
     :: (Logger logger)
     => Bool
-    -> P.PactDbEnv p
+    -> (P.PactDbEnv p, CoreDb)
     -> Vector ChainwebTransaction
     -> Miner
     -> ModuleCache
@@ -391,7 +391,7 @@ applyPactCmds isGenesis env cmds miner mc blockGas txTimeLimit = do
 applyPactCmd
   :: (Logger logger)
   => Bool
-  -> P.PactDbEnv p
+  -> (P.PactDbEnv p, CoreDb)
   -> Miner
   -> Maybe Micros
   -> ChainwebTransaction

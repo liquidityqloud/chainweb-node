@@ -58,6 +58,9 @@ import Pact.Types.Persistence
 import Pact.Types.RowData
 import Pact.Types.SQLite
 
+import qualified Pact.Core.Persistence.MockPersistence as PCore
+import qualified Pact.Core.Serialise as PCore
+
 -- chainweb
 import Chainweb.BlockHash
 import Chainweb.BlockHeader
@@ -118,11 +121,12 @@ initRelationalCheckpointer'
 initRelationalCheckpointer' bstate sqlenv loggr v cid = do
     let dbenv = BlockDbEnv sqlenv loggr
     db <- newMVar (BlockEnv dbenv bstate)
+    coreDb <- PCore.mockPactDb PCore.serialisePact
     runBlockEnv db initSchema
     let pactDbEnv = PactDbEnv chainwebPactDb db
     let checkpointer = Checkpointer
           {
-            _cpRestore = doRestore v cid db
+            _cpRestore = doRestore v cid db coreDb
           , _cpSave = doSave db
           , _cpDiscard = doDiscard db
           , _cpGetEarliestBlock = doGetEarliest db
@@ -146,22 +150,23 @@ doRestore :: (Logger logger)
   => ChainwebVersion
   -> ChainId
   -> Db logger
+  -> CoreDb
   -> Maybe (BlockHeight, ParentHash)
   -> IO (PactDbEnv' logger)
-doRestore v cid dbenv (Just (bh, hash)) = runBlockEnv dbenv $ do
+doRestore v cid dbenv coreDb (Just (bh, hash)) = runBlockEnv dbenv $ do
     setModuleNameFix
     setSortedKeys
     setLowerCaseTables
     clearPendingTxState
     void $ withSavepoint PreBlock $ handlePossibleRewind v cid bh hash
     beginSavepoint Block
-    return $! PactDbEnv' $! PactDbEnv chainwebPactDb dbenv
+    return $! PactDbEnv' $! (PactDbEnv chainwebPactDb dbenv, coreDb)
   where
     -- Module name fix follows the restore call to checkpointer.
     setModuleNameFix = bsModuleNameFix .= enableModuleNameFix v cid bh
     setSortedKeys = bsSortedKeys .= pact42 v cid bh
     setLowerCaseTables = bsLowerCaseTables .= chainweb217Pact v cid bh
-doRestore _ _ dbenv Nothing = runBlockEnv dbenv $ do
+doRestore _ _ dbenv coreDb Nothing = runBlockEnv dbenv $ do
     clearPendingTxState
     withSavepoint DbTransaction $
       callDb "doRestoreInitial: resetting tables" $ \db -> do
@@ -179,7 +184,7 @@ doRestore _ _ dbenv Nothing = runBlockEnv dbenv $ do
         exec_ db "DELETE FROM TransactionIndex;"
     beginSavepoint Block
     assign bsTxId 0
-    return $! PactDbEnv' $ PactDbEnv chainwebPactDb dbenv
+    return $! PactDbEnv' $! (PactDbEnv chainwebPactDb dbenv, coreDb)
 
 doSave :: Db logger -> BlockHash -> IO ()
 doSave dbenv hash = runBlockEnv dbenv $ do

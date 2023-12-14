@@ -68,6 +68,7 @@ module Chainweb.Chainweb.Configuration
 , configRosetta
 , configBackup
 , configServiceApi
+, configPactCore
 , configOnlySyncPact
 , configSyncPactChains
 , defaultChainwebConfiguration
@@ -397,6 +398,7 @@ data ChainwebConfiguration = ChainwebConfiguration
     , _configRosetta :: !Bool
     , _configBackup :: !BackupConfig
     , _configServiceApi :: !ServiceApiConfig
+    , _configPactCore :: !Bool
     , _configOnlySyncPact :: !Bool
         -- ^ exit after synchronizing pact dbs to the latest cut
     , _configSyncPactChains :: !(Maybe [ChainId])
@@ -458,6 +460,7 @@ defaultChainwebConfiguration v = ChainwebConfiguration
     , _configAllowReadsInLocal = False
     , _configRosetta = False
     , _configServiceApi = defaultServiceApiConfig
+    , _configPactCore = False
     , _configOnlySyncPact = False
     , _configSyncPactChains = Nothing
     , _configBackup = defaultBackupConfig
@@ -484,6 +487,7 @@ instance ToJSON ChainwebConfiguration where
         , "allowReadsInLocal" .= _configAllowReadsInLocal o
         , "rosetta" .= _configRosetta o
         , "serviceApi" .= _configServiceApi o
+        , "pactCore" .= _configPactCore o
         , "onlySyncPact" .= _configOnlySyncPact o
         , "syncPactChains" .= _configSyncPactChains o
         , "backup" .= _configBackup o
@@ -513,6 +517,7 @@ instance FromJSON (ChainwebConfiguration -> ChainwebConfiguration) where
         <*< configPreInsertCheckTimeout ..: "preInsertCheckTimeout" % o
         <*< configRosetta ..: "rosetta" % o
         <*< configServiceApi %.: "serviceApi" % o
+        <*< configPactCore ..: "pactCore" % o
         <*< configOnlySyncPact ..: "onlySyncPact" % o
         <*< configSyncPactChains ..: "syncPactChains" % o
         <*< configBackup %.: "backup" % o
@@ -562,6 +567,9 @@ pChainwebConfiguration = id
     <*< configCuts %:: pCutConfig
     <*< configServiceApi %:: pServiceApiConfig
     <*< configMining %:: pMiningConfig
+    <*< configPactCore .:: boolOption_
+        % long "pact-core"
+        <> help "Use pact-core"
     <*< configOnlySyncPact .:: boolOption_
         % long "only-sync-pact"
         <> help "Terminate after synchronizing the pact databases to the latest cut"

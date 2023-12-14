@@ -155,6 +155,7 @@ withPactService ver cid chainwebLogger bhDb pdb sqlenv config act =
                     , _psOnFatalError = defaultOnFatalError (logFunctionText chainwebLogger)
                     , _psVersion = ver
                     , _psAllowReadsInLocal = _pactAllowReadsInLocal config
+                    , _psPactCore = _pactPactCore config
                     , _psIsBatch = False
                     , _psCheckpointerDepth = 0
                     , _psLogger = pactServiceLogger
@@ -426,7 +427,7 @@ attemptBuyGas
     -> (PactDbEnv' logger)
     -> Vector (Either InsertError ChainwebTransaction)
     -> PactServiceM logger tbl (Vector (Either InsertError ChainwebTransaction))
-attemptBuyGas miner (PactDbEnv' dbEnv) txs = localLabel ("transaction", "attemptBuyGas") $ do
+attemptBuyGas miner (PactDbEnv' (dbEnv,coreDb)) txs = localLabel ("transaction", "attemptBuyGas") $ do
         mc <- getInitCache
         l <- view psLogger
         V.fromList . toList . sfst <$> V.foldM (f l) (T2 mempty mc) txs
@@ -436,24 +437,25 @@ attemptBuyGas miner (PactDbEnv' dbEnv) txs = localLabel ("transaction", "attempt
       -> Either InsertError ChainwebTransaction
       -> PactServiceM logger tbl (T2 (DL.DList (Either InsertError ChainwebTransaction)) ModuleCache)
     f l (T2 dl mcache) cmd = do
-        T2 mcache' !res <- runBuyGas l dbEnv mcache cmd
+        T2 mcache' !res <- runBuyGas l dbEnv coreDb mcache cmd
         pure $! T2 (DL.snoc dl res) mcache'
 
     createGasEnv
         :: logger
         -> P.PactDbEnv db
+        -> CoreDb
         -> P.Command (P.Payload P.PublicMeta P.ParsedCode)
         -> P.GasPrice
         -> P.Gas
         -> PactServiceM logger tbl (TransactionEnv logger db)
-    createGasEnv l db cmd gp gl = do
+    createGasEnv l db cdb cmd gp gl = do
         pd <- getTxContext (publicMetaOf cmd)
         spv <- use psSpvSupport
         let ec = P.mkExecutionConfig $
               [ P.FlagDisableModuleInstall
               , P.FlagDisableHistoryInTransactionalMode ] ++
               disableReturnRTC (ctxVersion pd) (ctxChainId pd) (ctxCurrentBlockHeight pd)
-        return $! TransactionEnv P.Transactional db l Nothing (ctxToPublicData pd) spv nid gp rk gl ec
+        return $! TransactionEnv P.Transactional db cdb l Nothing (ctxToPublicData pd) spv nid gp rk gl ec
       where
         !nid = networkIdOf cmd
         !rk = P.cmdToRequestKey cmd
@@ -461,11 +463,12 @@ attemptBuyGas miner (PactDbEnv' dbEnv) txs = localLabel ("transaction", "attempt
     runBuyGas
         :: logger
         -> P.PactDbEnv a
+        -> CoreDb
         -> ModuleCache
         -> Either InsertError ChainwebTransaction
         -> PactServiceM logger tbl (T2 ModuleCache (Either InsertError ChainwebTransaction))
-    runBuyGas _l _db mcache l@Left {} = return (T2 mcache l)
-    runBuyGas l db mcache (Right tx) = do
+    runBuyGas _l _db cdb mcache l@Left {} = return (T2 mcache l)
+    runBuyGas l db cdb mcache (Right tx) = do
         let cmd = payloadObj <$> tx
             gasPrice = view cmdGasPrice cmd
             gasLimit = fromIntegral $ view cmdGasLimit cmd
@@ -478,7 +481,7 @@ attemptBuyGas miner (PactDbEnv' dbEnv) txs = localLabel ("transaction", "attempt
                 , _txWarnings = mempty
                 }
 
-        buyGasEnv <- createGasEnv l db cmd gasPrice gasLimit
+        buyGasEnv <- createGasEnv l db cdb cmd gasPrice gasLimit
 
         cr <- liftIO
           $! catchesPactError l CensorsUnexpectedError
@@ -759,7 +762,7 @@ execLocal cwtx preflight sigVerify rdepth = pactLabel "execLocal" $ withDiscarde
                     disableReturnRTC (ctxVersion ctx) (ctxChainId ctx) (ctxCurrentBlockHeight ctx)
 
             cr <- applyLocal
-              _psLogger _psGasLogger pdbenv
+              _psLogger _psGasLogger _psPactCore pdbenv
               gasModel ctx spv
               cwtx mc execConfig
 

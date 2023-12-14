@@ -46,6 +46,8 @@ import Pact.Types.RPC
 import Pact.Types.Runtime
 import Pact.Types.SPV
 
+import qualified Pact.Core.Persistence.MockPersistence as PCore
+import qualified Pact.Core.Serialise as PCore
 
 -- internal chainweb modules
 
@@ -54,6 +56,7 @@ import Chainweb.BlockHeader
 import Chainweb.BlockHeight
 import Chainweb.Logger
 import Chainweb.Miner.Pact
+import Chainweb.Pact.Backend.Types
 import Chainweb.Pact.Templates
 import Chainweb.Pact.TransactionExec
 import Chainweb.Pact.Types
@@ -147,10 +150,10 @@ ccReplTests ccFile = do
 
     failCC i e = assertFailure $ renderInfo (_faInfo i) <> ": " <> unpack e
 
-loadCC :: FilePath -> IO (PactDbEnv LibState, ModuleCache)
+loadCC :: FilePath -> IO ((PactDbEnv LibState, CoreDb), ModuleCache)
 loadCC = loadScript
 
-loadScript :: FilePath -> IO (PactDbEnv LibState, ModuleCache)
+loadScript :: FilePath -> IO ((PactDbEnv LibState, CoreDb), ModuleCache)
 loadScript fp = do
   (r, rst) <- execScript' Quiet fp
   either fail (const $ return ()) r
@@ -158,7 +161,8 @@ loadScript fp = do
             (view (rEnv . eePactDb) rst)
             (view (rEnv . eePactDbVar) rst)
       mc = view (rEvalState . evalRefs . rsLoadedModules) rst
-  return (pdb, moduleCacheFromHashMap mc)
+  coreDb <- PCore.mockPactDb PCore.serialisePact
+  return ((pdb, coreDb), moduleCacheFromHashMap mc)
 
 -- ---------------------------------------------------------------------- --
 -- Template vuln tests
@@ -249,19 +253,19 @@ testCoinbase797DateFix = testCaseSteps "testCoinbase791Fix" $ \step -> do
       Right l -> assertFailure $ "wrong return type: " <> show l
 
   where
-    doCoinbaseExploit pdb mc height localCmd precompile testResult = do
+    doCoinbaseExploit (pdb,coreDb) mc height localCmd precompile testResult = do
       let ctx = TxContext (mkTestParentHeader $ height - 1) def
 
-      void $ applyCoinbase Mainnet01 logger pdb miner 0.1 ctx
+      void $ applyCoinbase Mainnet01 logger (pdb,coreDb) miner 0.1 ctx
         (EnforceCoinbaseFailure True) (CoinbaseUsePrecompiled precompile) mc
 
       let h = H.toUntypedHash (H.hash "" :: H.PactHash)
-          tenv = TransactionEnv Transactional pdb logger Nothing def
+          tenv = TransactionEnv Transactional pdb coreDb logger Nothing def
             noSPVSupport Nothing 0.0 (RequestKey h) 0 def
           txst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
 
       CommandResult _ _ (PactResult pr) _ _ _ _ _ <- evalTransactionM tenv txst $!
-        applyExec 0 defaultInterpreter localCmd [] h permissiveNamespacePolicy
+        applyExec False 0 defaultInterpreter localCmd [] h permissiveNamespacePolicy
 
       testResult pr
 

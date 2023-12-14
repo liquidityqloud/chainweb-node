@@ -25,7 +25,6 @@
 module Chainweb.Pact.Backend.Types
     ( Checkpointer(..)
     , Env'(..)
-    , EnvPersist'(..)
     , PactDbConfig(..)
     , pdbcGasLimit
     , pdbcGasRate
@@ -33,11 +32,7 @@ module Chainweb.Pact.Backend.Types
     , pdbcPersistDir
     , pdbcPragmas
     , PactDbEnv'(..)
-    , PactDbEnvPersist(..)
-    , pdepEnv
-    , pdepPactDb
-    , PactDbState(..)
-    , pdbsDbEnv
+    , CoreDb
 
     , SQLiteRowDelta(..)
     , SQLiteDeltaKey(..)
@@ -112,6 +107,9 @@ import Pact.Types.Persistence
 import Pact.Types.RowData (RowData)
 import Pact.Types.Runtime (TableName)
 
+import qualified Pact.Core.Builtin as PCore
+import qualified Pact.Core.Persistence as PCore
+
 -- internal modules
 import Chainweb.BlockHash
 import Chainweb.BlockHeader
@@ -123,20 +121,6 @@ import Chainweb.Utils (T2)
 import Chainweb.Mempool.Mempool (MempoolPreBlockCheck,TransactionHash,BlockFill)
 
 data Env' = forall a. Env' (PactDbEnv (DbEnv a))
-
-data PactDbEnvPersist p = PactDbEnvPersist
-    { _pdepPactDb :: !(PactDb (DbEnv p))
-    , _pdepEnv :: !(DbEnv p)
-    }
-
-makeLenses ''PactDbEnvPersist
-
-
-data EnvPersist' = forall a. EnvPersist' (PactDbEnvPersist a)
-
-newtype PactDbState = PactDbState { _pdbsDbEnv :: EnvPersist' }
-
-makeLenses ''PactDbState
 
 data PactDbConfig = PactDbConfig
     { _pdbcPersistDir :: !(Maybe FilePath)
@@ -284,7 +268,8 @@ newtype BlockHandler logger p a = BlockHandler
 
         )
 
-newtype PactDbEnv' logger = PactDbEnv' (PactDbEnv (BlockEnv logger SQLiteEnv))
+type CoreDb = PCore.PactDb PCore.RawBuiltin ()
+newtype PactDbEnv' logger = PactDbEnv' (PactDbEnv (BlockEnv logger SQLiteEnv), PCore.PactDb PCore.RawBuiltin ())
 
 type ParentHash = BlockHash
 

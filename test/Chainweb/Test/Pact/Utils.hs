@@ -184,6 +184,9 @@ import Pact.Types.Term
 import Pact.Types.SQLite
 import Pact.Types.Util (parseB16TextOnly)
 
+import qualified Pact.Core.Persistence.MockPersistence as PCore
+import qualified Pact.Core.Serialise as PCore
+
 -- internal modules
 
 import Chainweb.BlockHeader
@@ -672,13 +675,14 @@ testPactCtxSQLite
   -> IO (TestPactCtx logger tbl, PactDbEnv' logger)
 testPactCtxSQLite logger v cid bhdb pdb sqlenv conf gasmodel = do
     (dbSt,cp) <- initRelationalCheckpointer' initialBlockState sqlenv cpLogger v cid
+    coreDb <- PCore.mockPactDb PCore.serialisePact
     let rs = readRewards
     let ph = ParentHeader $ genesisBlockHeader v cid
     !ctx <- TestPactCtx
       <$!> newMVar (PactServiceState Nothing mempty ph noSPVSupport)
       <*> pure (pactServiceEnv cp rs)
     evalPactServiceM_ ctx (initialPayloadState mempty v cid)
-    return (ctx, PactDbEnv' dbSt)
+    return (ctx, PactDbEnv' (dbSt,coreDb))
   where
     initialBlockState = initBlockState defaultModuleCacheLimit $ genesisHeight v cid
     cpLogger = addLabel ("chain-id", chainIdToText cid) $ addLabel ("sub-component", "checkpointer") $ logger
@@ -696,6 +700,7 @@ testPactCtxSQLite logger v cid bhdb pdb sqlenv conf gasmodel = do
         , _psOnFatalError = defaultOnFatalError mempty
         , _psVersion = v
         , _psAllowReadsInLocal = _pactAllowReadsInLocal conf
+        , _psPactCore = False
         , _psIsBatch = False
         , _psCheckpointerDepth = 0
         , _psLogger = addLabel ("chain-id", chainIdToText cid) $ addLabel ("component", "pact") $ _cpLogger cp

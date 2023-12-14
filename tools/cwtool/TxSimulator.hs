@@ -128,7 +128,7 @@ simulate sc@(SimConfig dbDir txIdx' _ _ cid ver gasLog doTypecheck) = do
                   txc noSPVSupport cmd (initGas cmdPwt) mc ApplySend
               T.putStrLn (J.encodeText (J.Array <$> cr))
         (_,True) -> do
-          PactDbEnv' pde <-
+          PactDbEnv' (pde, _) <-
               _cpRestore cp $ Just (succ (_blockHeight parent), _blockHash parent)
           let refStore = RefStore nativeDefs
               pd = ctxToPublicData $ TxContext (ParentHeader parent) def
@@ -176,6 +176,7 @@ simulate sc@(SimConfig dbDir txIdx' _ _ cid ver gasLog doTypecheck) = do
                   , _psAllowReadsInLocal = False
                   , _psLogger = logger
                   , _psGasLogger = gasLogger
+                  , _psPactCore = False
                   , _psIsBatch = False
                   , _psCheckpointerDepth = 1
                   , _psBlockGasLimit = testBlockGasLimit

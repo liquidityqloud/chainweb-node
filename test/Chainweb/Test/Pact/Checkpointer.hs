@@ -94,7 +94,7 @@ testModuleName = withResourceT withTempSQLiteResource $
             hash02 = getArbitrary 2
         void $ _cpRestore (Just (1, hash00))
         _cpSave hash01
-        (PactDbEnv' (PactDbEnv pactdb mvar)) <- _cpRestore (Just (2, hash01))
+        (PactDbEnv' (PactDbEnv pactdb mvar, _)) <- _cpRestore (Just (2, hash01))
 
 
         -- block 2: write module records
@@ -589,7 +589,7 @@ withRelationalCheckpointerResource =
     withResource initializeSQLite freeSQLiteResource . runSQLite
 
 addKeyset :: PactDbEnv' logger -> KeySetName -> KeySet -> IO ()
-addKeyset (PactDbEnv' (PactDbEnv pactdb mvar)) keysetname keyset =
+addKeyset (PactDbEnv' (PactDbEnv pactdb mvar, _)) keysetname keyset =
     _writeRow pactdb Insert KeySets keysetname keyset mvar
 
 runTwice :: MonadIO m => (String -> IO ()) -> m () -> m ()
@@ -620,25 +620,25 @@ runSQLite' runTest sqlEnvIO = runTest $ do
     logger = addLabel ("sub-component", "relational-checkpointer") $ dummyLogger
 
 runExec :: (Logger logger) => Checkpointer logger -> PactDbEnv' logger -> Maybe Value -> Text -> IO EvalResult
-runExec cp (PactDbEnv' pactdbenv) eData eCode = do
+runExec cp (PactDbEnv' (pactdbenv, coreDb)) eData eCode = do
     execMsg <- buildExecParsedCode maxBound {- use latest parser version -} eData eCode
     evalTransactionM cmdenv cmdst $
-      applyExec' 0 defaultInterpreter execMsg [] h' permissiveNamespacePolicy
+      applyExec' False 0 defaultInterpreter execMsg [] h' permissiveNamespacePolicy
   where
     h' = H.toUntypedHash (H.hash "" :: H.PactHash)
-    cmdenv = TransactionEnv Transactional pactdbenv (_cpLogger cp) Nothing def
+    cmdenv = TransactionEnv Transactional pactdbenv coreDb (_cpLogger cp) Nothing def
              noSPVSupport Nothing 0.0 (RequestKey h') 0 def
     cmdst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
 
 runCont :: Checkpointer logger -> PactDbEnv' logger -> PactId -> Int -> IO EvalResult
-runCont cp (PactDbEnv' pactdbenv) pactId step = do
+runCont cp (PactDbEnv' (pactdbenv,coreDb)) pactId step = do
     evalTransactionM cmdenv cmdst $
-      applyContinuation' 0 defaultInterpreter contMsg [] h' permissiveNamespacePolicy
+      applyContinuation' False 0 defaultInterpreter contMsg [] h' permissiveNamespacePolicy
   where
     contMsg = ContMsg pactId step False (toLegacyJson Null) Nothing
 
     h' = H.toUntypedHash (H.hash "" :: H.PactHash)
-    cmdenv = TransactionEnv Transactional pactdbenv (_cpLogger cp) Nothing def
+    cmdenv = TransactionEnv Transactional pactdbenv coreDb (_cpLogger cp) Nothing def
              noSPVSupport Nothing 0.0 (RequestKey h') 0 def
     cmdst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
 

@@ -24,13 +24,8 @@
 -- Pact Types module for Chainweb
 --
 module Chainweb.Pact.Types
-  ( -- * Pact Db State
-    PactDbStatePersist(..)
-  , pdbspRestoreFile
-  , pdbspPactDbState
-
-    -- * Misc helpers
-  , Transactions(..)
+  ( -- * Misc helpers
+    Transactions(..)
   , transactionCoinbase
   , transactionPairs
 
@@ -220,18 +215,22 @@ import Chainweb.Utils
 import Chainweb.Version
 import Utils.Logging.Trace
 
+import qualified Pact.Core.Builtin as PCore
+import qualified Pact.Core.Compile as PCore
+import qualified Pact.Core.Environment as PCore
+import qualified Pact.Core.Errors as PCore
+import qualified Pact.Core.Info as PCore
+import qualified Pact.Core.Interpreter as PCore
+import qualified Pact.Core.IR.Eval.RawBuiltin as PCore
+import qualified Pact.Core.IR.Eval.Runtime as PCore
+import qualified Pact.Core.IR.Term as PCore
+import qualified Pact.Core.Persistence as PCore
 
 data Transactions r = Transactions
     { _transactionPairs :: !(Vector (ChainwebTransaction, r))
     , _transactionCoinbase :: !(CommandResult [TxLogJson])
     } deriving (Functor, Foldable, Traversable, Eq, Show, Generic, NFData)
 makeLenses 'Transactions
-
-data PactDbStatePersist = PactDbStatePersist
-    { _pdbspRestoreFile :: !(Maybe FilePath)
-    , _pdbspPactDbState :: !PactDbState
-    }
-makeLenses ''PactDbStatePersist
 
 -- -------------------------------------------------------------------------- --
 -- Coinbase output utils
@@ -322,6 +321,7 @@ makeLenses ''TransactionState
 data TransactionEnv logger db = TransactionEnv
     { _txMode :: !ExecutionMode
     , _txDbEnv :: !(PactDbEnv db)
+    , _txCoreDb :: !CoreDb
     , _txLogger :: !logger
     , _txGasLogger :: !(Maybe logger)
     , _txPublicData :: !PublicData
@@ -427,6 +427,7 @@ data PactServiceEnv logger tbl = PactServiceEnv
     , _psLogger :: !logger
     , _psGasLogger :: !(Maybe logger)
 
+    , _psPactCore :: !Bool
     -- The following two fields are used to enforce invariants for using the
     -- checkpointer. These would better be enforced on the type level. But that
     -- would require changing many function signatures and is postponed for now.
@@ -473,6 +474,7 @@ testPactServiceConfig = PactServiceConfig
       , _pactLocalRewindDepthLimit = defaultLocalRewindDepthLimit
       , _pactPreInsertCheckTimeout = defaultPreInsertCheckTimeout
       , _pactQueueSize = 1000
+      , _pactPactCore = False
       , _pactResetDb = True
       , _pactAllowReadsInLocal = False
       , _pactUnlimitedInitialRewind = False

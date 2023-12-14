@@ -93,6 +93,7 @@ data PactServiceConfig = PactServiceConfig
     -- ^ Allow direct database reads in local mode
   , _pactQueueSize :: !Natural
     -- ^ max size of pact internal queue.
+  , _pactPactCore :: !Bool
   , _pactResetDb :: !Bool
     -- ^ blow away pact dbs
   , _pactUnlimitedInitialRewind :: !Bool
