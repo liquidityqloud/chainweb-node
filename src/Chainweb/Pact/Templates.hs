@@ -40,6 +40,15 @@ import Chainweb.Miner.Pact
 import Chainweb.Pact.Types
 import Chainweb.Pact.Service.Types
 
+import qualified Pact.Core.Evaluate as Core
+import qualified Pact.Core.IR.Term as Core
+import qualified Pact.Core.Builtin as Core
+import qualified Pact.Core.Literal as Core
+import qualified Pact.Core.Names as Core
+import qualified Pact.Core.Syntax.ParseTree as CoreLisp
+
+type CoreTerm = Core.EvalTerm Core.RawBuiltin ()
+
 
 inf :: Info
 inf = Info $ Just (Code "",Parsed (Columns 0 0) 0)
@@ -66,7 +75,7 @@ strArgSetter idx = tApp . appArgs . ix idx . tLiteral . _LString
 {-# INLINE strArgSetter #-}
 
 buyGasTemplate :: (Term Name, ASetter' (Term Name) Text, ASetter' (Term Name) Text)
-buyGasTemplate =
+buyGasTemplate  =
   ( app (qn "coin" "fund-tx")
       [ strLit "sender"
       , strLit "mid"
@@ -78,6 +87,21 @@ buyGasTemplate =
   )
 {-# NOINLINE buyGasTemplate #-}
 
+buyGasTemplateCore :: Text -> Text -> CoreLisp.Expr ()
+buyGasTemplateCore sender minerId =
+  let senderTerm = coreStrLit sender
+      midTerm = coreStrLit minerId
+      varApp = coreQn "fund-tx" "coin"
+      rks = coreApp (coreBn "read-keyset") [coreStrLit "miner-keyset"]
+      rds = coreApp (coreBn "read-decimal") [coreStrLit "total"]
+  in coreApp varApp [senderTerm, midTerm, rks, rds]
+
+
+
+coreApp arg args = CoreLisp.App arg args ()
+coreStrLit txt = CoreLisp.Constant (Core.LString txt) ()
+coreQn name modname = CoreLisp.Var (Core.QN (Core.QualifiedName name (Core.ModuleName modname Nothing))) ()
+coreBn name = CoreLisp.Var (Core.BN (Core.BareName name)) ()
 
 dummyParsedCode :: ParsedCode
 dummyParsedCode = ParsedCode "1" [ELiteral $ LiteralExp (LInteger 1) def]
@@ -99,6 +123,22 @@ mkBuyGasTerm (MinerId mid) (MinerKeys ks) sender total = (populatedTerm, execMsg
           , "total" J..= total
           ]
 {-# INLINABLE mkBuyGasTerm #-}
+
+-- mkBuyGasCoreTerm
+--   :: MinerId   -- ^ Id of the miner to fund
+--   -> MinerKeys -- ^ Miner keyset
+--   -> Text      -- ^ Address of the sender from the command
+--   -> GasSupply -- ^ The gas limit total * price
+--   -> (Term Name,ExecMsg ParsedCode)
+-- mkBuyGasCoreTerm (MinerId mid) (MinerKeys ks) sender total = (populatedTerm, execMsg)
+--   where term = buyGasTemplate sender mid
+--         populatedTerm = set senderS sender $ set minerS mid term
+--         execMsg = ExecMsg dummyParsedCode (toLegacyJsonViaEncode buyGasData)
+--         buyGasData = J.object
+--           [ "miner-keyset" J..= ks
+--           , "total" J..= total
+--           ]
+-- {-# INLINABLE mkBuyGasCoreTerm #-}
 
 
 coinbaseTemplate :: (Term Name,ASetter' (Term Name) Text)
