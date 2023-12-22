@@ -220,7 +220,6 @@ import qualified Pact.Core.Compile as PCore
 import qualified Pact.Core.Environment as PCore
 import qualified Pact.Core.Errors as PCore
 import qualified Pact.Core.Info as PCore
-import qualified Pact.Core.Interpreter as PCore
 import qualified Pact.Core.IR.Eval.RawBuiltin as PCore
 import qualified Pact.Core.IR.Eval.Runtime as PCore
 import qualified Pact.Core.IR.Term as PCore

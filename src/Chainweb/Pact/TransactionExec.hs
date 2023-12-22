@@ -81,6 +81,7 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified System.LogLevel as L
+import qualified Data.Vector as Vec
 
 -- internal Pact modules
 
@@ -103,9 +104,11 @@ import Pact.Types.RPC
 import Pact.Types.Runtime hiding (catchesPactError)
 import Pact.Types.Server
 import Pact.Types.SPV
+import Pact.Types.Scheme
 
 import qualified Pact.Core.Evaluate as PCore
 import qualified Pact.Core.Compile as PCore
+import qualified Pact.Core.Capabilities as PCore
 import qualified Pact.Core.Info as PCore
 import qualified Pact.Core.Names as PCore
 import qualified Pact.Core.Namespace as PCore
@@ -122,6 +125,7 @@ import qualified Pact.Core.IR.Term as PCore
 import qualified Pact.Core.Builtin as PCore
 import qualified Pact.Core.Syntax.ParseTree as PCore
 import qualified Pact.Core.DefPacts.Types as PCore
+import qualified Pact.Core.Scheme as PCore
 
 -- internal Chainweb modules
 
@@ -1129,6 +1133,14 @@ mkCoreEvalEnv nsp MsgData{..} = do
       -- TODO: replase aeson parseMaybe with Pact.Json.Decode
       convertPactValue pv = A.parseMaybe A.parseJSON $ J.toJsonViaEncode pv
       convertAesonValue av = A.parseMaybe A.parseJSON av
+      convertQualName QualifiedName{..} = PCore.QualifiedName
+        { PCore._qnName = _qnName
+        , PCore._qnModName = _qnQual & \ModuleName{..} ->
+            PCore.ModuleName
+              { PCore._mnName = _mnName
+              , PCore._mnNamespace = fmap coerce _mnNamespace
+              }
+        }
 
     let
       txMode = case _txMode tenv of
@@ -1137,7 +1149,7 @@ mkCoreEvalEnv nsp MsgData{..} = do
 
     let
       coreMsg = PCore.MsgData
-        { PCore.mdData = PCore.ObjectData $ mempty -- convertAesonValue $ _getLegacyValue mdData
+        { PCore.mdData = maybe (PCore.PObject mempty) id $ convertAesonValue $ _getLegacyValue mdData
         , PCore.mdStep = mdStep <&> \PactStep{..} ->
             PCore.DefPactStep
               { PCore._psStep = _psStep
@@ -1155,17 +1167,19 @@ mkCoreEvalEnv nsp MsgData{..} = do
                     }
               }
         , PCore.mdHash = coerce $ mdHash
+        , PCore.mdSigners = mdSigners <&> \Signer{..} ->
+            PCore.Signer
+              { PCore._siScheme = _siScheme <&> \case
+                  ED25519 -> PCore.ED25519
+                  WebAuthn -> PCore.WebAuthn
+              , PCore._siPubKey = _siPubKey
+              , PCore._siAddress = _siAddress
+              , PCore._siCapList = _siCapList <&> \SigCapability{..} ->
+                  PCore.CapToken (convertQualName _scName) (mapMaybe convertPactValue _scArgs)
+              }
         }
 
     let
-      convertQualName QualifiedName{..} = PCore.QualifiedName
-        { PCore._qnName = _qnName
-        , PCore._qnModName = _qnQual & \ModuleName{..} ->
-            PCore.ModuleName
-              { PCore._mnName = _mnName
-              , PCore._mnNamespace = fmap coerce _mnNamespace
-              }
-        }
       coreNsp = case nsp of
         SimpleNamespacePolicy _ -> PCore.SimpleNamespacePolicy
         SmartNamespacePolicy rootUsage name -> PCore.SmartNamespacePolicy rootUsage (convertQualName name)
