@@ -360,10 +360,11 @@ applyGenesisCmd logger (dbEnv, coreDb) spv txCtx cmd =
 
     interp = initStateInterpreter
       $ initCapabilities [magic_GENESIS, magic_COINBASE]
+    evalState = def
 
     go = do
       -- TODO: fix with version recordification so that this matches the flags at genesis heights.
-      cr <- catchesPactError logger (onChainErrorPrintingFor txCtx) $! runGenesis cmd permissiveNamespacePolicy interp
+      cr <- catchesPactError logger (onChainErrorPrintingFor txCtx) $! runGenesis cmd permissiveNamespacePolicy interp evalState
       case cr of
         Left e -> fatal $ "Genesis command failed: " <> sshow e
         Right r -> r <$ debug "successful genesis tx for request key"
@@ -416,12 +417,14 @@ applyCoinbase v logger (dbEnv, coreDb) (Miner mid mks@(MinerKeys mk)) reward@(Pa
         mk
     let (cterm, cexec) = mkCoinbaseTerm mid mks reward
         interp = Interpreter $ \_ -> do put initState; fmap pure (eval cterm)
+        evalState = def
 
-    go interp cexec
+    go interp evalState cexec
   | otherwise = do
     cexec <- mkCoinbaseCmd mid mks reward
     let interp = initStateInterpreter initState
-    go interp cexec
+    let evalState = def
+    go interp evalState cexec
   where
     chainweb213Pact' = chainweb213Pact v cid bh
     fork1_3InEffect = vuln797Fix v cid bh
@@ -444,9 +447,9 @@ applyCoinbase v logger (dbEnv, coreDb) (Miner mid mks@(MinerKeys mk)) reward@(Pa
         -- NOTE: it holds that @ _pdPrevBlockHash pd == encode _blockHash@
         -- NOTE: chash includes the /quoted/ text of the parent header.
 
-    go interp cexec = evalTransactionM tenv txst $! do
+    go interp evalState cexec = evalTransactionM tenv txst $! do
       cr <- catchesPactError logger (onChainErrorPrintingFor txCtx) $
-        applyExec' False 0 interp cexec mempty chash managedNamespacePolicy
+        applyExec' False 0 interp evalState cexec mempty chash managedNamespacePolicy
 
       case cr of
         Left e
@@ -507,9 +510,10 @@ applyLocal logger gasLogger usePactCore (dbEnv, coreDb) gasModel txCtx spv cmdIn
 
     applyPayload m = do
       interp <- gasInterpreter gas0
+      let evalState = def
       cr <- catchesPactError logger PrintsUnexpectedError $! case m of
         Exec em ->
-          applyExec usePactCore gas0 interp em signers chash managedNamespacePolicy
+          applyExec usePactCore gas0 interp evalState em signers chash managedNamespacePolicy
         Continuation cm ->
           applyContinuation usePactCore gas0 interp cm signers chash managedNamespacePolicy
 
@@ -552,11 +556,12 @@ readInitModules logger (dbEnv, coreDb) txCtx
            rk 0 def
     txst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
     interp = defaultInterpreter
+    evalState = def
     die msg = throwM $ PactInternalError $ "readInitModules: " <> msg
     mkCmd = buildExecParsedCode (pactParserVersion v cid h) Nothing
     run msg cmd = do
       er <- catchesPactError logger (onChainErrorPrintingFor txCtx) $!
-        applyExec' False 0 interp cmd [] chash permissiveNamespacePolicy
+        applyExec' True 0 interp evalState cmd [] chash permissiveNamespacePolicy
       case er of
         Left e -> die $ msg <> ": failed: " <> sshow e
         Right r -> case _erOutput r of
@@ -652,11 +657,12 @@ applyUpgrades v cid height
     interp = initStateInterpreter
         $ installCoinModuleAdmin
         $ initCapabilities [mkMagicCapSlot "REMEDIATE"]
+    evalState = def
 
     applyTx tx = do
       infoLog $ "Running upgrade tx " <> sshow (_cmdHash tx)
 
-      tryAllSynchronous (runGenesis tx permissiveNamespacePolicy interp) >>= \case
+      tryAllSynchronous (runGenesis tx permissiveNamespacePolicy interp evalState) >>= \case
         Right _ -> use txCache
         Left e -> do
           logError $ "Upgrade transaction failed! " <> sshow e
@@ -690,7 +696,8 @@ runPayload cmd nsp = do
 
     case payload of
       Exec pm ->
-        applyExec False g0 interp pm signers chash nsp
+        --TODO: pass proper pact-core evalState
+        applyExec False g0 interp def pm signers chash nsp
       Continuation ym ->
         applyContinuation False g0 interp ym signers chash nsp
 
@@ -707,10 +714,11 @@ runGenesis
     => Command (Payload PublicMeta ParsedCode)
     -> NamespacePolicy
     -> Interpreter p
+    -> PCore.EvalState PCore.RawBuiltin ()
     -> TransactionM logger p (CommandResult [TxLogJson])
-runGenesis cmd nsp interp = case payload of
+runGenesis cmd nsp interp evalState = case payload of
     Exec pm ->
-      applyExec False 0 interp pm signers chash nsp
+      applyExec False 0 interp evalState pm signers chash nsp
     Continuation ym ->
       applyContinuation False 0 interp ym signers chash nsp
   where
@@ -725,13 +733,14 @@ applyExec
     => Bool
     -> Gas
     -> Interpreter p
+    -> PCore.EvalState PCore.RawBuiltin ()
     -> ExecMsg ParsedCode
     -> [Signer]
     -> Hash
     -> NamespacePolicy
     -> TransactionM logger p (CommandResult [TxLogJson])
-applyExec usePactCore initialGas interp em senderSigs hsh nsp = do
-    EvalResult{..} <- applyExec' usePactCore initialGas interp em senderSigs hsh nsp
+applyExec usePactCore initialGas interp evalState em senderSigs hsh nsp = do
+    EvalResult{..} <- applyExec' usePactCore initialGas interp evalState em senderSigs hsh nsp
     for_ _erLogGas $ \gl -> gasLog $ "gas logs: " <> sshow gl
     !logs <- use txLogs
     !rk <- view txRequestKey
@@ -753,12 +762,13 @@ applyExec'
     => Bool
     -> Gas
     -> Interpreter p
+    -> PCore.EvalState PCore.RawBuiltin ()
     -> ExecMsg ParsedCode
     -> [Signer]
     -> Hash
     -> NamespacePolicy
     -> TransactionM logger p EvalResult
-applyExec' usePactCore initialGas interp (ExecMsg parsedCode execData) senderSigs hsh nsp
+applyExec' usePactCore initialGas interp evalState (ExecMsg parsedCode execData) senderSigs hsh nsp
     | null (_pcExps parsedCode) = throwCmdEx "No expressions found"
     | otherwise = do
 
@@ -769,8 +779,10 @@ applyExec' usePactCore initialGas interp (ExecMsg parsedCode execData) senderSig
       evalEnv <- mkCoreEvalEnv nsp (MsgData execData Nothing hsh senderSigs)
 
       when usePactCore $ do
-        er' <- liftIO $ PCore.evalExec evalEnv (PCore.RawCode $ _pcCode parsedCode)
-        liftIO $! print er'
+        er' <- liftIO $ PCore.evalExec evalEnv evalState (PCore.RawCode $ _pcCode parsedCode)
+        case er' of
+          Right _ -> pure ()
+          Left err -> liftIO $! print err
 
       er <- liftIO $! evalExec interp eenv parsedCode
 
@@ -915,8 +927,9 @@ buyGas isPactBackCompatV16 cmd (Miner mid mks) = go
       let (buyGasTerm, buyGasCmd) = mkBuyGasTerm mid mks sender supply
           interp mc = Interpreter $ \_input ->
             put (initState mc logGas) >> run (pure <$> eval buyGasTerm)
+          evalState = def
 
-      result <- applyExec' False 0 (interp mcache) buyGasCmd
+      result <- applyExec' False 0 (interp mcache) evalState buyGasCmd
         (_pSigners $ _cmdPayload cmd) bgHash managedNamespacePolicy
 
       case _erExec result of
