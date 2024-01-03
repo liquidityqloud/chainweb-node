@@ -153,7 +153,7 @@ ccReplTests ccFile = do
 loadCC :: FilePath -> IO ((PactDbEnv LibState, CoreDb), ModuleCache)
 loadCC = loadScript
 
-loadScript :: FilePath -> IO ((PactDbEnv LibState, CoreDb), ModuleCache)
+loadScript :: FilePath -> IO ((PactDbEnv LibState, CoreDb), (ModuleCache,CoreModuleCache))
 loadScript fp = do
   (r, rst) <- execScript' Quiet fp
   either fail (const $ return ()) r
@@ -358,7 +358,7 @@ testUpgradeScript
     :: FilePath
     -> V.ChainId
     -> BlockHeight
-    -> (T2 (CommandResult [TxLogJson]) (Maybe ModuleCache) -> IO ())
+    -> (T2 (CommandResult [TxLogJson]) (Maybe (ModuleCache, CoreModuleCache)) -> IO ())
     -> IO ()
 testUpgradeScript script cid bh test = do
     (pdb, mc) <- loadScript script

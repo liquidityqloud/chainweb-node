@@ -161,7 +161,8 @@ execBlock currHeader plData pdbenv = do
       fromIntegral <$> maxBlockGasLimit v (_blockHeight currHeader)
 
     logInitCache = do
-      mc <- fmap (fmap instr . _getModuleCache) <$> use psInitCache
+      initCache <- use psInitCache
+      let mc = fmap (\(mc, _) -> fmap instr $ _getModuleCache mc) initCache
       logDebug $ "execBlock: initCache: " <> sshow mc
 
     instr (md,_) = preview (P._MDModule . P.mHash) $ P._mdModule md
@@ -305,17 +306,17 @@ execTransactions
     -> Maybe Micros
     -> PactServiceM logger tbl (Transactions (Either GasPurchaseFailure (P.CommandResult [P.TxLogJson])))
 execTransactions isGenesis miner ctxs enfCBFail usePrecomp (PactDbEnv' pactdbenv) gasLimit timeLimit = do
-    mc <- getCache
+    (mc, cmc) <- getCache
 
-    coinOut <- runCoinbase isGenesis pactdbenv miner enfCBFail usePrecomp mc
-    txOuts <- applyPactCmds isGenesis pactdbenv ctxs miner mc gasLimit timeLimit
+    coinOut <- runCoinbase isGenesis pactdbenv miner enfCBFail usePrecomp (mc, cmc)
+    txOuts <- applyPactCmds isGenesis pactdbenv ctxs miner (mc, cmc) gasLimit timeLimit
     return $! Transactions (V.zip ctxs txOuts) coinOut
   where
     getCache = get >>= \PactServiceState{..} -> do
       let pbh = _blockHeight . _parentHeader
       case Map.lookupLE (pbh _psParentHeader) _psInitCache of
         Nothing -> if isGenesis
-          then return mempty
+          then return (mempty, mempty)
           else do
             l <- asks _psLogger
             txCtx <- getTxContext def
@@ -344,10 +345,10 @@ runCoinbase
     -> Miner
     -> EnforceCoinbaseFailure
     -> CoinbaseUsePrecompiled
-    -> ModuleCache
+    -> (ModuleCache, CoreModuleCache)
     -> PactServiceM logger tbl (P.CommandResult [P.TxLogJson])
 runCoinbase True _ _ _ _ _ = return noCoinbase
-runCoinbase False dbEnv miner enfCBFail usePrecomp mc = do
+runCoinbase False dbEnv miner enfCBFail usePrecomp (mc, cmc) = do
     logger <- view psLogger
     rs <- view psMinerRewards
     v <- view chainwebVersion
@@ -357,7 +358,7 @@ runCoinbase False dbEnv miner enfCBFail usePrecomp mc = do
 
     reward <- liftIO $! minerReward v rs bh
 
-    (T2 cr upgradedCacheM) <- liftIO $ applyCoinbase v logger dbEnv miner reward txCtx enfCBFail usePrecomp mc
+    (T2 cr upgradedCacheM) <- liftIO $ applyCoinbase v logger dbEnv miner reward txCtx enfCBFail usePrecomp (mc, cmc)
     mapM_ upgradeInitCache upgradedCacheM
     debugResult "runCoinbase" (P.crLogs %~ fmap J.Array $ cr)
     return $! cr
@@ -378,14 +379,14 @@ applyPactCmds
     -> (P.PactDbEnv p, CoreDb)
     -> Vector ChainwebTransaction
     -> Miner
-    -> ModuleCache
+    -> (ModuleCache, CoreModuleCache)
     -> Maybe P.Gas
     -> Maybe Micros
     -> PactServiceM logger tbl (Vector (Either GasPurchaseFailure (P.CommandResult [P.TxLogJson])))
-applyPactCmds isGenesis env cmds miner mc blockGas txTimeLimit = do
+applyPactCmds isGenesis env cmds miner (mc, cmc) blockGas txTimeLimit = do
     let txsGas txs = fromIntegral $ sumOf (traversed . _Right . to P._crGas) txs
     txs <- tracePactServiceM' "applyPactCmds" () txsGas $
-      evalStateT (V.mapM (applyPactCmd isGenesis env miner txTimeLimit) cmds) (T2 mc blockGas)
+      evalStateT (V.mapM (applyPactCmd isGenesis env miner txTimeLimit) cmds) (T3 mc cmc blockGas)
     return txs
 
 applyPactCmd
@@ -396,16 +397,16 @@ applyPactCmd
   -> Maybe Micros
   -> ChainwebTransaction
   -> StateT
-      (T2 ModuleCache (Maybe P.Gas))
+      (T3 ModuleCache CoreModuleCache (Maybe P.Gas))
       (PactServiceM logger tbl)
       (Either GasPurchaseFailure (P.CommandResult [P.TxLogJson]))
-applyPactCmd isGenesis env miner txTimeLimit cmd = StateT $ \(T2 mcache maybeBlockGasRemaining) -> do
+applyPactCmd isGenesis env miner txTimeLimit cmd = StateT $ \(T3 mcache cmcache maybeBlockGasRemaining) -> do
   logger <- view psLogger
   gasLogger <- view psGasLogger
   gasModel <- view psGasModel
   v <- view psVersion
   let
-    onBuyGasFailure (BuyGasFailure f) = pure $! (Left f, T2 mcache maybeBlockGasRemaining)
+    onBuyGasFailure (BuyGasFailure f) = pure $! (Left f, T3 mcache cmcache maybeBlockGasRemaining)
     onBuyGasFailure e = throwM e
     requestedTxGasLimit = view cmdGasLimit (payloadObj <$> cmd)
     -- notice that we add 1 to the remaining block gas here, to distinguish the
@@ -421,7 +422,7 @@ applyPactCmd isGenesis env miner txTimeLimit cmd = StateT $ \(T2 mcache maybeBlo
       set cmdGasLimit newTxGasLimit (payloadObj <$> cmd)
     initialGas = initialGasOf (P._cmdPayload cmd)
   handle onBuyGasFailure $ do
-    T2 result mcache' <- do
+    T2 result (mcache', cmcache') <- do
       txCtx <- getTxContext (publicMetaOf gasLimitedCmd)
       if isGenesis
       then liftIO $! applyGenesisCmd logger env P.noSPVSupport txCtx gasLimitedCmd
@@ -433,14 +434,14 @@ applyPactCmd isGenesis env miner txTimeLimit cmd = StateT $ \(T2 mcache maybeBlo
             Nothing -> id
             Just limit ->
                maybe (throwM timeoutError) return <=< timeout (fromIntegral limit)
-        let txGas (T3 r _ _) = fromIntegral $ P._crGas r
-        T3 r c _warns <-
+        let txGas (T4 r _ _ _) = fromIntegral $ P._crGas r
+        T4 r c cc _warns <-
           tracePactServiceM' "applyCmd" (J.toJsonViaEncode (P._cmdHash cmd)) txGas $
-            liftIO $ txTimeout $ applyCmd v logger gasLogger env miner (gasModel txCtx) txCtx spv gasLimitedCmd initialGas mcache ApplySend
-        pure $ T2 r c
+            liftIO $ txTimeout $ applyCmd v logger gasLogger env miner (gasModel txCtx) txCtx spv gasLimitedCmd initialGas (mcache, cmcache) ApplySend
+        pure $ T2 r (c, cc)
 
     if isGenesis
-    then updateInitCache mcache'
+    then updateInitCache (mcache', cmcache')
     else debugResult "applyPactCmd" (P.crLogs %~ fmap J.Array $ result)
 
     cp <- getCheckpointer
@@ -457,7 +458,7 @@ applyPactCmd isGenesis env miner txTimeLimit cmd = StateT $ \(T2 mcache maybeBlo
           throwM $ BlockGasLimitExceeded (blockGasRemaining - fromIntegral requestedTxGasLimit)
       Nothing -> return ()
     let maybeBlockGasRemaining' = (\g -> g - P._crGas result) <$> maybeBlockGasRemaining
-    pure (Right result, T2 mcache' maybeBlockGasRemaining')
+    pure (Right result, T3 mcache' cmcache' maybeBlockGasRemaining')
 
 toHashCommandResult :: P.CommandResult [P.TxLogJson] -> P.CommandResult P.Hash
 toHashCommandResult = over (P.crLogs . _Just) $ P.pactHash . P.encodeTxLogJsonArray

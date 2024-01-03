@@ -184,6 +184,7 @@ module Chainweb.Utils
 -- * Strict Tuples
 , T2(..)
 , T3(..)
+, T4(..)
 , sfst
 , ssnd
 , scurry
@@ -1250,6 +1251,9 @@ data T3 a b c = T3 !a !b !c
 instance Bifunctor (T3 a) where
     bimap f g (T3 a b c) =  T3 a (f b) (g c)
     {-# INLINE bimap #-}
+
+data T4 a b c d = T4 !a !b !c !d
+    deriving (Show, Eq, Ord, Generic, NFData, Functor)
 
 sfst :: T2 a b -> a
 sfst (T2 a _) = a

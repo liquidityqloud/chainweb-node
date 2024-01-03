@@ -135,12 +135,13 @@ import Chainweb.Logger
 import qualified Chainweb.ChainId as Chainweb
 import Chainweb.Mempool.Mempool (requestKeyToTransactionHash)
 import Chainweb.Miner.Pact
+import Chainweb.Pact.Conversions
 import Chainweb.Pact.Service.Types
 import Chainweb.Pact.Templates
 import Chainweb.Pact.Types hiding (logError)
 import Chainweb.Pact.Backend.Types
 import Chainweb.Transaction
-import Chainweb.Utils (encodeToByteString, sshow, tryAllSynchronous, T2(..), T3(..))
+import Chainweb.Utils (encodeToByteString, sshow, tryAllSynchronous, T2(..), T3(..), T4(..))
 import Chainweb.Version as V
 import Chainweb.Version.Guards as V
 import Pact.JSON.Encode (toJsonViaEncode)
@@ -197,23 +198,24 @@ applyCmd
       -- ^ command with payload to execute
     -> Gas
       -- ^ initial gas used
-    -> ModuleCache
+    -> (ModuleCache, CoreModuleCache)
       -- ^ cached module state
     -> ApplyCmdExecutionContext
       -- ^ is this a local or send execution context?
-    -> IO (T3 (CommandResult [TxLogJson]) ModuleCache (S.Set PactWarning))
-applyCmd v logger gasLogger (pdbenv, coreDb) miner gasModel txCtx spv cmd initialGas mcache0 callCtx = do
+    -> IO (T4 (CommandResult [TxLogJson]) ModuleCache CoreModuleCache (S.Set PactWarning))
+applyCmd v logger gasLogger (pdbenv, coreDb) miner gasModel txCtx spv cmd initialGas (mcache0, mccache0) callCtx = do
     T2 cr st <- runTransactionM cenv txst applyBuyGas
 
     let cache = _txCache st
+        coreCache = _txCoreCache st
         warns = _txWarnings st
 
-    pure $ T3 cr cache warns
+    pure $ T4 cr cache coreCache warns
   where
     stGasModel
       | chainweb217Pact' = gasModel
       | otherwise = _geGasModel freeGasEnv
-    txst = TransactionState mcache0 mempty 0 Nothing stGasModel mempty
+    txst = TransactionState mcache0 mccache0 mempty 0 Nothing stGasModel mempty
 
     executionConfigNoHistory = ExecutionConfig
       $ S.singleton FlagDisableHistoryInTransactionalMode
@@ -322,9 +324,9 @@ applyGenesisCmd
       -- ^ tx metadata
     -> Command (Payload PublicMeta ParsedCode)
       -- ^ command with payload to execute
-    -> IO (T2 (CommandResult [TxLogJson]) ModuleCache)
+    -> IO (T2 (CommandResult [TxLogJson]) (ModuleCache, CoreModuleCache))
 applyGenesisCmd logger (dbEnv, coreDb) spv txCtx cmd =
-    second _txCache <$!> runTransactionM tenv txst go
+    second (\s -> (_txCache s, _txCoreCache s)) <$!> runTransactionM tenv txst go
   where
     nid = networkIdOf cmd
     rk = cmdToRequestKey cmd
@@ -351,6 +353,7 @@ applyGenesisCmd logger (dbEnv, coreDb) spv txCtx cmd =
         }
     txst = TransactionState
         { _txCache = mempty
+        , _txCoreCache = mempty
         , _txLogs = mempty
         , _txGasUsed = 0
         , _txGasId = Nothing
@@ -406,10 +409,10 @@ applyCoinbase
       -- ^ enforce coinbase failure or not
     -> CoinbaseUsePrecompiled
       -- ^ always enable precompilation
-    -> ModuleCache
-    -> IO (T2 (CommandResult [TxLogJson]) (Maybe ModuleCache))
+    -> (ModuleCache, CoreModuleCache)
+    -> IO (T2 (CommandResult [TxLogJson]) (Maybe (ModuleCache, CoreModuleCache)))
 applyCoinbase v logger (dbEnv, coreDb) (Miner mid mks@(MinerKeys mk)) reward@(ParsedDecimal d) txCtx
-  (EnforceCoinbaseFailure enfCBFailure) (CoinbaseUsePrecompiled enablePC) mc
+  (EnforceCoinbaseFailure enfCBFailure) (CoinbaseUsePrecompiled enablePC) (mc, cmc)
   | fork1_3InEffect || enablePC = do
     when chainweb213Pact' $ enforceKeyFormats
         (\k -> throwM $ CoinbaseFailure $ "Invalid miner key: " <> sshow k)
@@ -436,7 +439,7 @@ applyCoinbase v logger (dbEnv, coreDb) (Miner mid mks@(MinerKeys mk)) reward@(Pa
       ]
     tenv = TransactionEnv Transactional dbEnv coreDb logger Nothing (ctxToPublicData txCtx) noSPVSupport
            Nothing 0.0 rk 0 ec
-    txst = TransactionState mc mempty 0 Nothing (_geGasModel freeGasEnv) mempty
+    txst = TransactionState mc cmc mempty 0 Nothing (_geGasModel freeGasEnv) mempty
     initState = setModuleCache mc $ initCapabilities [magic_COINBASE]
     rk = RequestKey chash
     parent = _tcParentHeader txCtx
@@ -490,10 +493,10 @@ applyLocal
       -- ^ SPV support (validates cont proofs)
     -> Command PayloadWithText
       -- ^ command with payload to execute
-    -> ModuleCache
+    -> (ModuleCache, CoreModuleCache)
     -> ExecutionConfig
     -> IO (CommandResult [TxLogJson])
-applyLocal logger gasLogger usePactCore (dbEnv, coreDb) gasModel txCtx spv cmdIn mc execConfig =
+applyLocal logger gasLogger usePactCore (dbEnv, coreDb) gasModel txCtx spv cmdIn (mc, cmc) execConfig =
     evalTransactionM tenv txst go
   where
     cmd = payloadObj <$> cmdIn
@@ -505,7 +508,7 @@ applyLocal logger gasLogger usePactCore (dbEnv, coreDb) gasModel txCtx spv cmdIn
     gasLimit = view cmdGasLimit cmd
     tenv = TransactionEnv Local dbEnv coreDb logger gasLogger (ctxToPublicData txCtx) spv nid gasPrice
            rk (fromIntegral gasLimit) execConfig
-    txst = TransactionState mc mempty 0 Nothing gasModel mempty
+    txst = TransactionState mc cmc mempty 0 Nothing gasModel mempty
     gas0 = initialGasOf (_cmdPayload cmdIn)
 
     applyPayload m = do
@@ -532,7 +535,7 @@ readInitModules
       -- ^ Pact db environment
     -> TxContext
       -- ^ tx metadata and parent header
-    -> IO ModuleCache
+    -> IO (ModuleCache, CoreModuleCache)
 readInitModules logger (dbEnv, coreDb) txCtx
     | chainweb217Pact' = evalTransactionM tenv txst goCw217
     | otherwise = evalTransactionM tenv txst go
@@ -554,7 +557,7 @@ readInitModules logger (dbEnv, coreDb) txCtx
     chash = pactInitialHash
     tenv = TransactionEnv Local dbEnv coreDb logger Nothing (ctxToPublicData txCtx) noSPVSupport nid 0.0
            rk 0 def
-    txst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
+    txst = TransactionState mempty mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
     interp = defaultInterpreter
     evalState = def
     die msg = throwM $ PactInternalError $ "readInitModules: " <> msg
@@ -569,7 +572,7 @@ readInitModules logger (dbEnv, coreDb) txCtx
           (o:_) -> return o
 
 
-    go :: TransactionM logger p ModuleCache
+    go :: TransactionM logger p (ModuleCache, CoreModuleCache)
     go = do
 
       -- see if fungible-v2 is there
@@ -597,18 +600,22 @@ readInitModules logger (dbEnv, coreDb) txCtx
       void $ run "load modules" refModsCmd
 
       -- return loaded cache
-      use txCache
+      c <- use txCache
+      cc <- use txCoreCache
+      pure (c, cc)
 
     -- Only load coin and its dependencies for chainweb >=2.17
     -- Note: no need to check if things are there, because this
     -- requires a block height that witnesses the invariant.
     --
     -- if this changes, we must change the filter in 'updateInitCache'
-    goCw217 :: TransactionM logger p ModuleCache
+    goCw217 :: TransactionM logger p (ModuleCache, CoreModuleCache)
     goCw217 = do
       coinDepCmd <- liftIO $ mkCmd "coin.MINIMUM_PRECISION"
       void $ run "load modules" coinDepCmd
-      use txCache
+      c <- use txCache
+      cc <- use txCoreCache
+      pure (c, cc)
 
 -- | Apply (forking) upgrade transactions and module cache updates
 -- at a particular blockheight.
@@ -624,18 +631,24 @@ applyUpgrades
   => ChainwebVersion
   -> Chainweb.ChainId
   -> BlockHeight
-  -> TransactionM logger p (Maybe ModuleCache)
+  -> TransactionM logger p (Maybe (ModuleCache, CoreModuleCache))
 applyUpgrades v cid height
      | Just upg <-
          v ^? versionUpgrades . onChain cid . at height . _Just = applyUpgrade upg
      | cleanModuleCache v cid height = filterModuleCache
      | otherwise = return Nothing
   where
-    installCoinModuleAdmin = set (evalCapabilities . capModuleAdmin) $ S.singleton (ModuleName "coin" Nothing)
+    coinModuleName = ModuleName "coin" Nothing
+    coinCoreModuleName = PCore.ModuleName "coin" Nothing
+    installCoinModuleAdmin = set (evalCapabilities . capModuleAdmin) $ S.singleton coinModuleName
 
     filterModuleCache = do
       mc <- use txCache
-      pure $ Just $ filterModuleCacheByKey (== "coin") mc
+      cmc <- use txCoreCache
+      pure $ Just $
+        ( filterModuleCacheByKey (== coinModuleName) mc
+        , filterCoreModuleCacheByKey (== coinCoreModuleName) cmc
+        )
 
     applyUpgrade upg = do
       infoLog "Applying upgrade!"
@@ -652,7 +665,7 @@ applyUpgrades v cid height
       caches <- local
         (txExecutionConfig .~ ExecutionConfig flags)
         (mapM applyTx payloads)
-      return $ Just $ mconcat $ reverse caches
+      return $ Just $ bimap mconcat mconcat $ unzip $ reverse caches
 
     interp = initStateInterpreter
         $ installCoinModuleAdmin
@@ -663,7 +676,10 @@ applyUpgrades v cid height
       infoLog $ "Running upgrade tx " <> sshow (_cmdHash tx)
 
       tryAllSynchronous (runGenesis tx permissiveNamespacePolicy interp evalState) >>= \case
-        Right _ -> use txCache
+        Right _ -> do
+          c <- use txCache
+          cc <- use txCoreCache
+          pure (c, cc)
         Left e -> do
           logError $ "Upgrade transaction failed! " <> sshow e
           throwM e
@@ -1110,6 +1126,17 @@ setModuleCache mcache es =
   c = moduleCacheToHashMap mcache
 {-# INLINE setModuleCache #-}
 
+setCoreModuleCache
+  :: CoreModuleCache
+  -> PCore.EvalState PCore.RawBuiltin ()
+  -> PCore.EvalState PCore.RawBuiltin ()
+setCoreModuleCache mcache es =
+  let allDeps = foldMap PCore.allModuleExports $ _getCoreModuleCache mcache
+  in set (PCore.esLoaded . PCore.loAllLoaded) allDeps $ set (PCore.esLoaded . PCore.loModules) c es
+ where
+  c = _getCoreModuleCache mcache
+{-# INLINE setCoreModuleCache #-}
+
 -- | Set tx result state
 --
 setTxResultState :: EvalResult -> TransactionM logger db ()
@@ -1148,11 +1175,7 @@ mkCoreEvalEnv nsp MsgData{..} = do
       convertAesonValue av = A.parseMaybe A.parseJSON av
       convertQualName QualifiedName{..} = PCore.QualifiedName
         { PCore._qnName = _qnName
-        , PCore._qnModName = _qnQual & \ModuleName{..} ->
-            PCore.ModuleName
-              { PCore._mnName = _mnName
-              , PCore._mnNamespace = fmap coerce _mnNamespace
-              }
+        , PCore._qnModName = _qnQual & convertModuleName
         }
 
     let

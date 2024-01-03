@@ -428,17 +428,17 @@ attemptBuyGas
     -> Vector (Either InsertError ChainwebTransaction)
     -> PactServiceM logger tbl (Vector (Either InsertError ChainwebTransaction))
 attemptBuyGas miner (PactDbEnv' (dbEnv,coreDb)) txs = localLabel ("transaction", "attemptBuyGas") $ do
-        mc <- getInitCache
+        (mc, cmc) <- getInitCache
         l <- view psLogger
-        V.fromList . toList . sfst <$> V.foldM (f l) (T2 mempty mc) txs
+        V.fromList . toList . sfst <$> V.foldM (f l) (T2 mempty (mc, cmc)) txs
   where
     f :: logger
-      -> T2 (DL.DList (Either InsertError ChainwebTransaction)) ModuleCache
+      -> T2 (DL.DList (Either InsertError ChainwebTransaction)) (ModuleCache, CoreModuleCache)
       -> Either InsertError ChainwebTransaction
-      -> PactServiceM logger tbl (T2 (DL.DList (Either InsertError ChainwebTransaction)) ModuleCache)
-    f l (T2 dl mcache) cmd = do
-        T2 mcache' !res <- runBuyGas l dbEnv coreDb mcache cmd
-        pure $! T2 (DL.snoc dl res) mcache'
+      -> PactServiceM logger tbl (T2 (DL.DList (Either InsertError ChainwebTransaction)) (ModuleCache, CoreModuleCache))
+    f l (T2 dl (mcache, cmcache)) cmd = do
+        T3 mcache' cmcache' !res <- runBuyGas l dbEnv coreDb (mcache, cmcache) cmd
+        pure $! T2 (DL.snoc dl res) (mcache', cmcache')
 
     createGasEnv
         :: logger
@@ -464,16 +464,17 @@ attemptBuyGas miner (PactDbEnv' (dbEnv,coreDb)) txs = localLabel ("transaction",
         :: logger
         -> P.PactDbEnv a
         -> CoreDb
-        -> ModuleCache
+        -> (ModuleCache, CoreModuleCache)
         -> Either InsertError ChainwebTransaction
-        -> PactServiceM logger tbl (T2 ModuleCache (Either InsertError ChainwebTransaction))
-    runBuyGas _l _db cdb mcache l@Left {} = return (T2 mcache l)
-    runBuyGas l db cdb mcache (Right tx) = do
+        -> PactServiceM logger tbl (T3 ModuleCache CoreModuleCache (Either InsertError ChainwebTransaction))
+    runBuyGas _l _db cdb (mcache, cmcache) l@Left {} = return (T3 mcache cmcache l)
+    runBuyGas l db cdb (mcache, cmcache) (Right tx) = do
         let cmd = payloadObj <$> tx
             gasPrice = view cmdGasPrice cmd
             gasLimit = fromIntegral $ view cmdGasLimit cmd
             txst = TransactionState
                 { _txCache = mcache
+                , _txCoreCache = cmcache
                 , _txLogs = mempty
                 , _txGasUsed = 0
                 , _txGasId = Nothing
@@ -489,8 +490,8 @@ attemptBuyGas miner (PactDbEnv' (dbEnv,coreDb)) txs = localLabel ("transaction",
           $! buyGas False cmd miner
 
         case cr of
-            Left err -> return (T2 mcache (Left (InsertErrorBuyGas (T.pack $ show err))))
-            Right t -> return (T2 (_txCache t) (Right tx))
+            Left err -> return (T3 mcache cmcache (Left (InsertErrorBuyGas (T.pack $ show err))))
+            Right t -> return (T3 (_txCache t) (_txCoreCache t) (Right tx))
 
 -- | Note: The BlockHeader param here is the PARENT HEADER of the new
 -- block-to-be
@@ -743,7 +744,7 @@ execLocal cwtx preflight sigVerify rdepth = pactLabel "execLocal" $ withDiscarde
             assertLocalMetadata cmd ctx sigVerify >>= \case
               Right{} -> do
                 let initialGas = initialGasOf $ P._cmdPayload cwtx
-                T3 cr _mc warns <- liftIO $ applyCmd
+                T4 cr _mc _cmc warns <- liftIO $ applyCmd
                   _psVersion _psLogger _psGasLogger pdbenv
                   noMiner gasModel ctx spv cmd
                   initialGas mc ApplyLocal

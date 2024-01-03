@@ -628,7 +628,7 @@ runExec cp (PactDbEnv' (pactdbenv, coreDb)) eData eCode = do
     h' = H.toUntypedHash (H.hash "" :: H.PactHash)
     cmdenv = TransactionEnv Transactional pactdbenv coreDb (_cpLogger cp) Nothing def
              noSPVSupport Nothing 0.0 (RequestKey h') 0 def
-    cmdst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
+    cmdst = TransactionState mempty mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
 
 runCont :: Checkpointer logger -> PactDbEnv' logger -> PactId -> Int -> IO EvalResult
 runCont cp (PactDbEnv' (pactdbenv,coreDb)) pactId step = do
@@ -640,7 +640,7 @@ runCont cp (PactDbEnv' (pactdbenv,coreDb)) pactId step = do
     h' = H.toUntypedHash (H.hash "" :: H.PactHash)
     cmdenv = TransactionEnv Transactional pactdbenv coreDb (_cpLogger cp) Nothing def
              noSPVSupport Nothing 0.0 (RequestKey h') 0 def
-    cmdst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
+    cmdst = TransactionState mempty mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
 
 -- -------------------------------------------------------------------------- --
 -- Pact Utils
