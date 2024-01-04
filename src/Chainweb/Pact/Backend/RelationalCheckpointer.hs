@@ -97,7 +97,7 @@ withProdRelationalCheckpointer
     -> (Checkpointer logger -> IO a)
     -> IO a
 withProdRelationalCheckpointer logger bstate sqlenv v cid inner = do
-    (dbenv, cp) <- initRelationalCheckpointer' bstate sqlenv logger v cid
+    (PactDbEnv' (dbenv, _), cp) <- initRelationalCheckpointer' bstate sqlenv logger v cid
     withAsync (logModuleCacheStats dbenv) $ \_ -> inner cp
   where
     logFun = logFunctionText logger
@@ -117,13 +117,13 @@ initRelationalCheckpointer'
     -> logger
     -> ChainwebVersion
     -> ChainId
-    -> IO (PactDbEnv (BlockEnv logger SQLiteEnv), Checkpointer logger)
+    -> IO (PactDbEnv' logger, Checkpointer logger)
 initRelationalCheckpointer' bstate sqlenv loggr v cid = do
     let dbenv = BlockDbEnv sqlenv loggr
     db <- newMVar (BlockEnv dbenv bstate)
     coreDb <- PCore.mockPactDb PCore.serialisePact
     runBlockEnv db initSchema
-    let pactDbEnv = PactDbEnv chainwebPactDb db
+    let pactDbEnv = PactDbEnv' (PactDbEnv chainwebPactDb db, coreDb)
     let checkpointer = Checkpointer
           {
             _cpRestore = doRestore v cid db coreDb

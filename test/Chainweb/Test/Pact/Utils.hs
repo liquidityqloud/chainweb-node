@@ -675,14 +675,13 @@ testPactCtxSQLite
   -> IO (TestPactCtx logger tbl, PactDbEnv' logger)
 testPactCtxSQLite logger v cid bhdb pdb sqlenv conf gasmodel = do
     (dbSt,cp) <- initRelationalCheckpointer' initialBlockState sqlenv cpLogger v cid
-    coreDb <- PCore.mockPactDb PCore.serialisePact
     let rs = readRewards
     let ph = ParentHeader $ genesisBlockHeader v cid
     !ctx <- TestPactCtx
       <$!> newMVar (PactServiceState Nothing mempty ph noSPVSupport)
       <*> pure (pactServiceEnv cp rs)
     evalPactServiceM_ ctx (initialPayloadState mempty v cid)
-    return (ctx, PactDbEnv' (dbSt,coreDb))
+    return (ctx, dbSt)
   where
     initialBlockState = initBlockState defaultModuleCacheLimit $ genesisHeight v cid
     cpLogger = addLabel ("chain-id", chainIdToText cid) $ addLabel ("sub-component", "checkpointer") $ logger
