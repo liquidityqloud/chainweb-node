@@ -167,6 +167,15 @@ magic_GAS = mkMagicCapSlot "GAS"
 magic_GENESIS :: CapSlot UserCapability
 magic_GENESIS = mkMagicCapSlot "GENESIS"
 
+core_magic_COINBASE :: PCore.CapSlot PCore.QualifiedName PCore.PactValue
+core_magic_COINBASE = mkMagicCoreCapSlot "COINBASE"
+
+core_magic_GAS :: PCore.CapSlot PCore.QualifiedName PCore.PactValue
+core_magic_GAS = mkMagicCoreCapSlot "GAS"
+
+core_magic_GENESIS :: PCore.CapSlot PCore.QualifiedName PCore.PactValue
+core_magic_GENESIS = mkMagicCoreCapSlot "GENESIS"
+
 onChainErrorPrintingFor :: TxContext -> UnexpectedErrorPrinting
 onChainErrorPrintingFor txCtx =
   if chainweb219Pact (ctxVersion txCtx) (ctxChainId txCtx) (ctxCurrentBlockHeight txCtx)
@@ -363,7 +372,7 @@ applyGenesisCmd logger (dbEnv, coreDb) spv txCtx cmd =
 
     interp = initStateInterpreter
       $ initCapabilities [magic_GENESIS, magic_COINBASE]
-    evalState = def
+    evalState = initCoreCapabilities [core_magic_GENESIS, core_magic_COINBASE]
 
     go = do
       -- TODO: fix with version recordification so that this matches the flags at genesis heights.
@@ -426,7 +435,7 @@ applyCoinbase v logger (dbEnv, coreDb) (Miner mid mks@(MinerKeys mk)) reward@(Pa
   | otherwise = do
     cexec <- mkCoinbaseCmd mid mks reward
     let interp = initStateInterpreter initState
-    let evalState = def
+    let evalState = setCoreModuleCache cmc $ initCoreCapabilities [core_magic_COINBASE]
     go interp evalState cexec
   where
     chainweb213Pact' = chainweb213Pact v cid bh
@@ -641,6 +650,7 @@ applyUpgrades v cid height
     coinModuleName = ModuleName "coin" Nothing
     coinCoreModuleName = PCore.ModuleName "coin" Nothing
     installCoinModuleAdmin = set (evalCapabilities . capModuleAdmin) $ S.singleton coinModuleName
+    installCoreCoinModuleAdmin = set (PCore.esCaps . PCore.csModuleAdmin) $ S.singleton coinCoreModuleName
 
     filterModuleCache = do
       mc <- use txCache
@@ -670,7 +680,7 @@ applyUpgrades v cid height
     interp = initStateInterpreter
         $ installCoinModuleAdmin
         $ initCapabilities [mkMagicCapSlot "REMEDIATE"]
-    evalState = def
+    evalState = installCoreCoinModuleAdmin $ initCoreCapabilities [mkMagicCoreCapSlot "REMEDIATE"]
 
     applyTx tx = do
       infoLog $ "Running upgrade tx " <> sshow (_cmdHash tx)
@@ -937,13 +947,14 @@ buyGas isPactBackCompatV16 cmd (Miner mid mks) = go
 
     go = do
       mcache <- use txCache
+      cmcache <- use txCoreCache
       supply <- gasSupplyOf <$> view txGasLimit <*> view txGasPrice
       logGas <- isJust <$> view txGasLogger
 
       let (buyGasTerm, buyGasCmd) = mkBuyGasTerm mid mks sender supply
           interp mc = Interpreter $ \_input ->
             put (initState mc logGas) >> run (pure <$> eval buyGasTerm)
-          evalState = def
+          evalState = setCoreModuleCache cmcache $ initCoreCapabilities [core_magic_GAS]
 
       result <- applyExec' False 0 (interp mcache) evalState buyGasCmd
         (_pSigners $ _cmdPayload cmd) bgHash managedNamespacePolicy
@@ -1051,6 +1062,10 @@ redeemGas cmd = do
 initCapabilities :: [CapSlot UserCapability] -> EvalState
 initCapabilities cs = set (evalCapabilities . capStack) cs def
 {-# INLINABLE initCapabilities #-}
+
+initCoreCapabilities :: [PCore.CapSlot PCore.QualifiedName PCore.PactValue] -> PCore.EvalState PCore.RawBuiltin ()
+initCoreCapabilities cs = set (PCore.esCaps . PCore.csSlots) cs def
+{-# INLINABLE initCoreCapabilities #-}
 
 initStateInterpreter :: EvalState -> Interpreter e
 initStateInterpreter s = Interpreter (put s >>)
@@ -1257,6 +1272,14 @@ mkMagicCapSlot c = CapSlot CapCallStack cap []
     fqn = QualifiedName mn c def
     cap = SigCapability fqn []
 {-# INLINE mkMagicCapSlot #-}
+
+mkMagicCoreCapSlot :: Text -> PCore.CapSlot PCore.QualifiedName PCore.PactValue
+mkMagicCoreCapSlot c = PCore.CapSlot cap []
+  where
+    mn = PCore.ModuleName "coin" Nothing
+    fqn = PCore.QualifiedName c mn
+    cap = PCore.CapToken fqn []
+{-# INLINE mkMagicCoreCapSlot #-}
 
 -- | Build the 'ExecMsg' for some pact code fed to the function. The 'value'
 -- parameter is for any possible environmental data that needs to go into

@@ -150,7 +150,7 @@ ccReplTests ccFile = do
 
     failCC i e = assertFailure $ renderInfo (_faInfo i) <> ": " <> unpack e
 
-loadCC :: FilePath -> IO ((PactDbEnv LibState, CoreDb), ModuleCache)
+loadCC :: FilePath -> IO ((PactDbEnv LibState, CoreDb), (ModuleCache,CoreModuleCache))
 loadCC = loadScript
 
 loadScript :: FilePath -> IO ((PactDbEnv LibState, CoreDb), (ModuleCache,CoreModuleCache))
@@ -162,7 +162,7 @@ loadScript fp = do
             (view (rEnv . eePactDbVar) rst)
       mc = view (rEvalState . evalRefs . rsLoadedModules) rst
   coreDb <- PCore.mockPactDb PCore.serialisePact
-  return ((pdb, coreDb), moduleCacheFromHashMap mc)
+  return ((pdb, coreDb), (moduleCacheFromHashMap mc, undefined))
 
 -- ---------------------------------------------------------------------- --
 -- Template vuln tests
@@ -262,7 +262,7 @@ testCoinbase797DateFix = testCaseSteps "testCoinbase791Fix" $ \step -> do
       let h = H.toUntypedHash (H.hash "" :: H.PactHash)
           tenv = TransactionEnv Transactional pdb coreDb logger Nothing def
             noSPVSupport Nothing 0.0 (RequestKey h) 0 def
-          txst = TransactionState mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
+          txst = TransactionState mempty mempty mempty 0 Nothing (_geGasModel freeGasEnv) mempty
 
       CommandResult _ _ (PactResult pr) _ _ _ _ _ <- evalTransactionM tenv txst $!
         applyExec False 0 defaultInterpreter def localCmd [] h permissiveNamespacePolicy
