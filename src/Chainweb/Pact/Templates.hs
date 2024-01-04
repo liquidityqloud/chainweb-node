@@ -16,7 +16,9 @@
 --
 module Chainweb.Pact.Templates
 ( mkBuyGasTerm
+, mkBuyGasCoreTerm
 , mkCoinbaseTerm
+, mkCoinbaseCoreTerm
 , mkCoinbaseCmd
 ) where
 
@@ -124,21 +126,12 @@ mkBuyGasTerm (MinerId mid) (MinerKeys ks) sender total = (populatedTerm, execMsg
           ]
 {-# INLINABLE mkBuyGasTerm #-}
 
--- mkBuyGasCoreTerm
---   :: MinerId   -- ^ Id of the miner to fund
---   -> MinerKeys -- ^ Miner keyset
---   -> Text      -- ^ Address of the sender from the command
---   -> GasSupply -- ^ The gas limit total * price
---   -> (Term Name,ExecMsg ParsedCode)
--- mkBuyGasCoreTerm (MinerId mid) (MinerKeys ks) sender total = (populatedTerm, execMsg)
---   where term = buyGasTemplate sender mid
---         populatedTerm = set senderS sender $ set minerS mid term
---         execMsg = ExecMsg dummyParsedCode (toLegacyJsonViaEncode buyGasData)
---         buyGasData = J.object
---           [ "miner-keyset" J..= ks
---           , "total" J..= total
---           ]
--- {-# INLINABLE mkBuyGasCoreTerm #-}
+mkBuyGasCoreTerm
+  :: MinerId   -- ^ Id of the miner to fund
+  -> Text      -- ^ Address of the sender from the command
+  -> CoreLisp.Expr ()
+mkBuyGasCoreTerm (MinerId mid) sender = buyGasTemplateCore sender mid
+{-# INLINABLE mkBuyGasCoreTerm #-}
 
 
 coinbaseTemplate :: (Term Name,ASetter' (Term Name) Text)
@@ -152,6 +145,13 @@ coinbaseTemplate =
   )
 {-# NOINLINE coinbaseTemplate #-}
 
+coinbaseTemplateCore :: Text -> CoreLisp.Expr ()
+coinbaseTemplateCore minerId =
+  let midTerm = coreStrLit minerId
+      varApp = coreQn "coinbase" "coin"
+      rks = coreApp (coreBn "read-keyset") [coreStrLit "miner-keyset"]
+      rds = coreApp (coreBn "read-decimal") [coreStrLit "rewrd"]
+  in coreApp varApp [midTerm, rks, rds]
 
 mkCoinbaseTerm :: MinerId -> MinerKeys -> ParsedDecimal -> (Term Name,ExecMsg ParsedCode)
 mkCoinbaseTerm (MinerId mid) (MinerKeys ks) reward = (populatedTerm, execMsg)
@@ -164,6 +164,12 @@ mkCoinbaseTerm (MinerId mid) (MinerKeys ks) reward = (populatedTerm, execMsg)
       , "reward" J..= reward
       ]
 {-# INLINABLE mkCoinbaseTerm #-}
+
+mkCoinbaseCoreTerm
+  :: MinerId   -- ^ Id of the miner to fund
+  -> CoreLisp.Expr ()
+mkCoinbaseCoreTerm (MinerId mid) = coinbaseTemplateCore mid
+{-# INLINABLE mkCoinbaseCoreTerm #-}
 
 -- | "Old method" to build a coinbase 'ExecMsg' for back-compat.
 --

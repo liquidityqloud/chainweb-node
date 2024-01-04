@@ -126,6 +126,9 @@ import qualified Pact.Core.Builtin as PCore
 import qualified Pact.Core.Syntax.ParseTree as PCore
 import qualified Pact.Core.DefPacts.Types as PCore
 import qualified Pact.Core.Scheme as PCore
+import qualified Pact.Core.IR.Eval.CEK as PCore
+import qualified Pact.Core.IR.Desugar as PCore
+import qualified Pact.Core.IR.Eval.Runtime.Types as PCore
 
 -- internal Chainweb modules
 
@@ -429,14 +432,15 @@ applyCoinbase v logger (dbEnv, coreDb) (Miner mid mks@(MinerKeys mk)) reward@(Pa
         mk
     let (cterm, cexec) = mkCoinbaseTerm mid mks reward
         interp = Interpreter $ \_ -> do put initState; fmap pure (eval cterm)
-        evalState = def
+        evalState = setCoreModuleCache cmc $ initCoreCapabilities [core_magic_COINBASE]
+        coinbaseTerm = mkCoinbaseCoreTerm mid
 
-    go interp evalState cexec
+    go interp evalState cexec (Just coinbaseTerm)
   | otherwise = do
     cexec <- mkCoinbaseCmd mid mks reward
     let interp = initStateInterpreter initState
     let evalState = setCoreModuleCache cmc $ initCoreCapabilities [core_magic_COINBASE]
-    go interp evalState cexec
+    go interp evalState cexec Nothing
   where
     chainweb213Pact' = chainweb213Pact v cid bh
     fork1_3InEffect = vuln797Fix v cid bh
@@ -459,8 +463,20 @@ applyCoinbase v logger (dbEnv, coreDb) (Miner mid mks@(MinerKeys mk)) reward@(Pa
         -- NOTE: it holds that @ _pdPrevBlockHash pd == encode _blockHash@
         -- NOTE: chash includes the /quoted/ text of the parent header.
 
-    go interp evalState cexec = evalTransactionM tenv txst $! do
-      cr <- catchesPactError logger (onChainErrorPrintingFor txCtx) $
+    go interp evalState cexec@(ExecMsg _ execData) mCoinbaseTerm = evalTransactionM tenv txst $! do
+      cr <- catchesPactError logger (onChainErrorPrintingFor txCtx) $ do
+        case mCoinbaseTerm of
+          Nothing -> pure ()
+          Just coinbaseTerm -> do
+            evalEnv <- mkCoreEvalEnv managedNamespacePolicy (MsgData execData Nothing chash mempty)
+            (er, evalState') <- liftIO $ PCore.runEvalM evalEnv evalState $ do
+              PCore.DesugarOutput term _ <- PCore.runDesugarTerm coinbaseTerm
+              PCore.eval PCore.PImpure PCore.builtinEnv term
+
+            case er of
+              Right _ -> txCoreCache .= (CoreModuleCache $ PCore._loModules $ PCore._esLoaded evalState')
+              Left err -> liftIO $! print err
+
         applyExec' False 0 interp evalState cexec mempty chash managedNamespacePolicy
 
       case cr of
@@ -522,7 +538,10 @@ applyLocal logger gasLogger usePactCore (dbEnv, coreDb) gasModel txCtx spv cmdIn
 
     applyPayload m = do
       interp <- gasInterpreter gas0
-      let evalState = def
+      evalState <- do
+        cmc <- use txCoreCache
+        pure $ setCoreModuleCache cmc def
+
       cr <- catchesPactError logger PrintsUnexpectedError $! case m of
         Exec em ->
           applyExec usePactCore gas0 interp evalState em signers chash managedNamespacePolicy
@@ -719,11 +738,13 @@ runPayload
 runPayload cmd nsp = do
     g0 <- use txGasUsed
     interp <- gasInterpreter g0
+    evalState <- do
+        cmc <- use txCoreCache
+        pure $ setCoreModuleCache cmc def
 
     case payload of
       Exec pm ->
-        --TODO: pass proper pact-core evalState
-        applyExec False g0 interp def pm signers chash nsp
+        applyExec True g0 interp evalState pm signers chash nsp
       Continuation ym ->
         applyContinuation False g0 interp ym signers chash nsp
 
@@ -744,7 +765,7 @@ runGenesis
     -> TransactionM logger p (CommandResult [TxLogJson])
 runGenesis cmd nsp interp evalState = case payload of
     Exec pm ->
-      applyExec False 0 interp evalState pm signers chash nsp
+      applyExec True 0 interp evalState pm signers chash nsp
     Continuation ym ->
       applyContinuation False 0 interp ym signers chash nsp
   where
@@ -802,12 +823,11 @@ applyExec' usePactCore initialGas interp evalState (ExecMsg parsedCode execData)
 
       setEnvGas initialGas eenv
 
-      evalEnv <- mkCoreEvalEnv nsp (MsgData execData Nothing hsh senderSigs)
-
       when usePactCore $ do
-        er' <- liftIO $ PCore.evalExec evalEnv evalState (PCore.RawCode $ _pcCode parsedCode)
-        case er' of
-          Right _ -> pure ()
+        evalEnv <- mkCoreEvalEnv nsp (MsgData execData Nothing hsh senderSigs)
+        er <- liftIO $ PCore.evalExec evalEnv evalState (PCore.RawCode $ _pcCode parsedCode)
+        case er of
+          Right er' -> txCoreCache .= (CoreModuleCache $ PCore._erLoadedModules er')
           Left err -> liftIO $! print err
 
       er <- liftIO $! evalExec interp eenv parsedCode
@@ -951,13 +971,22 @@ buyGas isPactBackCompatV16 cmd (Miner mid mks) = go
       supply <- gasSupplyOf <$> view txGasLimit <*> view txGasPrice
       logGas <- isJust <$> view txGasLogger
 
-      let (buyGasTerm, buyGasCmd) = mkBuyGasTerm mid mks sender supply
+      let (buyGasTerm, buyGasCmd@(ExecMsg _ execData)) = mkBuyGasTerm mid mks sender supply
           interp mc = Interpreter $ \_input ->
             put (initState mc logGas) >> run (pure <$> eval buyGasTerm)
           evalState = setCoreModuleCache cmcache $ initCoreCapabilities [core_magic_GAS]
 
       result <- applyExec' False 0 (interp mcache) evalState buyGasCmd
         (_pSigners $ _cmdPayload cmd) bgHash managedNamespacePolicy
+
+      evalEnv <- mkCoreEvalEnv managedNamespacePolicy (MsgData execData Nothing bgHash (_pSigners $ _cmdPayload cmd))
+      (er, evalState') <- liftIO $ PCore.runEvalM evalEnv evalState $ do
+        PCore.DesugarOutput term _ <- PCore.runDesugarTerm $ mkBuyGasCoreTerm mid sender
+        PCore.eval PCore.PImpure PCore.builtinEnv term
+
+      case er of
+        Right _ -> txCoreCache .= (CoreModuleCache $ PCore._loModules $ PCore._esLoaded evalState')
+        Left err -> liftIO $! print err
 
       case _erExec result of
         Nothing ->
