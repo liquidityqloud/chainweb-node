@@ -211,7 +211,6 @@ import Chainweb.Miner.Pact
 import Chainweb.Logger
 import Chainweb.Pact.Backend.DbCache
 import Chainweb.Pact.Backend.Types
-import Chainweb.Pact.Conversions
 import Chainweb.Pact.Service.Types
 import Chainweb.Payload.PayloadStore
 import Chainweb.Time

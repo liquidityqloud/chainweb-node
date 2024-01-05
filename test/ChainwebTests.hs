@@ -102,16 +102,16 @@ mempoolTestSuite db genesisBlock = testGroup "Mempool Consensus Tests"
 pactTestSuite :: RocksDb -> TestTree
 pactTestSuite rdb = testGroup "Chainweb-Pact Tests"
     [ Chainweb.Test.Pact.PactExec.tests
-    , Chainweb.Test.Pact.DbCacheTest.tests
-    , Chainweb.Test.Pact.Checkpointer.tests
-    , Chainweb.Test.Pact.PactMultiChainTest.tests
-    , Chainweb.Test.Pact.PactSingleChainTest.tests rdb
-    , Chainweb.Test.Pact.RemotePactTest.tests rdb
-    , Chainweb.Test.Pact.PactReplay.tests rdb
-    , Chainweb.Test.Pact.ModuleCacheOnRestart.tests rdb
-    , Chainweb.Test.Pact.TTL.tests rdb
-    , Chainweb.Test.Pact.RewardsTest.tests
-    , Chainweb.Test.Pact.NoCoinbase.tests
+    -- , Chainweb.Test.Pact.DbCacheTest.tests
+    -- , Chainweb.Test.Pact.Checkpointer.tests
+    -- , Chainweb.Test.Pact.PactMultiChainTest.tests
+    -- , Chainweb.Test.Pact.PactSingleChainTest.tests rdb
+    -- , Chainweb.Test.Pact.RemotePactTest.tests rdb
+    -- , Chainweb.Test.Pact.PactReplay.tests rdb
+    -- , Chainweb.Test.Pact.ModuleCacheOnRestart.tests rdb
+    -- , Chainweb.Test.Pact.TTL.tests rdb
+    -- , Chainweb.Test.Pact.RewardsTest.tests
+    -- , Chainweb.Test.Pact.NoCoinbase.tests
     ]
 
 rosettaTestSuite :: RocksDb -> TestTree

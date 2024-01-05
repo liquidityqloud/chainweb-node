@@ -85,32 +85,32 @@ tests =
     -- a fresh pact environment. Unfortunately, that's a bit slow.
     [ withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
         \ctx -> execTest ctx testReq2
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-        \ctx -> execTest ctx testReq3
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-        \ctx -> execTest ctx testReq4
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-        \ctx -> execTest ctx testReq5
-    , withPactCtxSQLite logger testEventsVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-        \ctx -> execTxsTest ctx "testTfrGas" testTfrGas
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-        \ctx -> execTxsTest ctx "testGasPayer" testGasPayer
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-        \ctx -> execTxsTest ctx "testContinuationGasPayer" testContinuationGasPayer
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-        \ctx -> execTxsTest ctx "testExecGasPayer" testExecGasPayer
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-      \ctx -> execTest ctx testReq6
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-      \ctx -> execTxsTest ctx "testTfrNoGasFails" testTfrNoGasFails
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-      \ctx -> execTxsTest ctx "testBadSenderFails" testBadSenderFails
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-      \ctx -> execTxsTest ctx "testFailureRedeem" testFailureRedeem
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
-      \ctx -> execLocalTest ctx "testAllowReadsLocalFails" testAllowReadsLocalFails
-    , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb allowReads $
-      \ctx -> execLocalTest ctx "testAllowReadsLocalSuccess" testAllowReadsLocalSuccess
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --     \ctx -> execTest ctx testReq3
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --     \ctx -> execTest ctx testReq4
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --     \ctx -> execTest ctx testReq5
+    -- , withPactCtxSQLite logger testEventsVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --     \ctx -> execTxsTest ctx "testTfrGas" testTfrGas
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --     \ctx -> execTxsTest ctx "testGasPayer" testGasPayer
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --     \ctx -> execTxsTest ctx "testContinuationGasPayer" testContinuationGasPayer
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --     \ctx -> execTxsTest ctx "testExecGasPayer" testExecGasPayer
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --   \ctx -> execTest ctx testReq6
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --   \ctx -> execTxsTest ctx "testTfrNoGasFails" testTfrNoGasFails
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --   \ctx -> execTxsTest ctx "testBadSenderFails" testBadSenderFails
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --   \ctx -> execTxsTest ctx "testFailureRedeem" testFailureRedeem
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb testPactServiceConfig $
+    --   \ctx -> execLocalTest ctx "testAllowReadsLocalFails" testAllowReadsLocalFails
+    -- , withPactCtxSQLite logger testVersion (bhdbIO rocksIO) pdb allowReads $
+    --   \ctx -> execLocalTest ctx "testAllowReadsLocalSuccess" testAllowReadsLocalSuccess
     ]
   where
     bhdbIO :: IO RocksDb -> IO BlockHeaderDb

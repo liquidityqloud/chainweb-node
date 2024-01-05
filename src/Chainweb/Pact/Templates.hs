@@ -150,7 +150,7 @@ coinbaseTemplateCore minerId =
   let midTerm = coreStrLit minerId
       varApp = coreQn "coinbase" "coin"
       rks = coreApp (coreBn "read-keyset") [coreStrLit "miner-keyset"]
-      rds = coreApp (coreBn "read-decimal") [coreStrLit "rewrd"]
+      rds = coreApp (coreBn "read-decimal") [coreStrLit "reward"]
   in coreApp varApp [midTerm, rks, rds]
 
 mkCoinbaseTerm :: MinerId -> MinerKeys -> ParsedDecimal -> (Term Name,ExecMsg ParsedCode)

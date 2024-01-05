@@ -138,7 +138,6 @@ import Chainweb.Logger
 import qualified Chainweb.ChainId as Chainweb
 import Chainweb.Mempool.Mempool (requestKeyToTransactionHash)
 import Chainweb.Miner.Pact
-import Chainweb.Pact.Conversions
 import Chainweb.Pact.Service.Types
 import Chainweb.Pact.Templates
 import Chainweb.Pact.Types hiding (logError)
@@ -1214,12 +1213,16 @@ mkCoreEvalEnv nsp MsgData{..} = do
     tenv <- ask
 
     let
-      -- TODO: replase aeson parseMaybe with Pact.Json.Decode
+      -- TODO: replace aeson parseMaybe with Pact.Json.Decode
       convertPactValue pv = A.parseMaybe A.parseJSON $ J.toJsonViaEncode pv
       convertAesonValue av = A.parseMaybe A.parseJSON av
       convertQualName QualifiedName{..} = PCore.QualifiedName
         { PCore._qnName = _qnName
-        , PCore._qnModName = _qnQual & convertModuleName
+        , PCore._qnModName = _qnQual & \ModuleName{..} ->
+            PCore.ModuleName
+              { PCore._mnName = _mnName
+              , PCore._mnNamespace = fmap coerce _mnNamespace
+              }
         }
 
     let
