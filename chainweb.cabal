@@ -115,6 +115,7 @@ library
     autogen-modules:
         Paths_chainweb
     c-sources: c/shathree.c
+    cc-options: -DSQLITE_CORE
     exposed-modules:
           Chainweb.Backup
         , Chainweb.BlockCreationTime
@@ -338,6 +339,7 @@ library
         , case-insensitive >= 1.2
         , cassava >= 0.5.1
         , chainweb-storage >= 0.1
+        , chronos >= 1.1
         , clock >= 0.7
         , configuration-tools >= 0.6
         , crypton-connection >=0.2
