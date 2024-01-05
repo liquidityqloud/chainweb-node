@@ -194,16 +194,16 @@ doReadRow mbh d k = forModuleNameFix $ \mnFix ->
         -- TODO: speed this up, cache it?
         let tableExistsStmt =
                 "SELECT tablename FROM VersionedTableCreation WHERE createBlockheight < ? AND tablename = ?"
-        case mbh of
-            Just bh | isUserTable tableName -> do
-                r <- callDb "doReadRow.tableExists" $ \db ->
-                    qry db tableExistsStmt [SInt $ fromIntegral bh, SText tableName] [RText]
-                case r of
-                    -- TODO: try to throw a DbError more cleanly. comment this.
-                    [] -> void $ callDb "doReadRow" $ \db -> qry db "garbage query" [] []
-                    [[SText _]] -> return ()
-                    err -> internalError $ "doReadRow: what?"
-            _ -> return ()
+        -- case mbh of
+        --     Just bh | isUserTable tableName -> do
+        --         r <- callDb "doReadRow.tableExists" $ \db ->
+        --             qry db tableExistsStmt [SInt $ fromIntegral bh, SText tableName] [RText]
+        --         case r of
+        --             -- TODO: try to throw a DbError more cleanly. comment this.
+        --             [] -> void $ callDb "doReadRow" $ \db -> qry db "garbage query" [] []
+        --             [[SText _]] -> return ()
+        --             err -> internalError $ "doReadRow: what?"
+        --     _ -> return ()
         let blockLimitParam = maybe [] (\(BlockHeight bh) -> [SInt $ fromIntegral bh - 1]) mbh
         result <- lift $ callDb "doReadRow"
                        $ \db -> qry db queryStmt ([SText rowkey] ++ blockLimitParam) [RBlob]
@@ -396,16 +396,16 @@ doKeys mbh d = do
             Just () -> do
                 let tableExistsStmt =
                         "SELECT tablename FROM VersionedTableCreation WHERE createBlockheight <= ? AND tablename = ?"
-                case mbh of
-                    Just bh | isUserTable tn -> do
-                        r <- callDb "doKeys.tableExists" $ \db ->
-                            qry db tableExistsStmt [SInt $ fromIntegral bh - 1, SText tn] [RText]
-                        case r of
-                            -- TODO: try to throw a DbError more cleanly. comment this.
-                            [] -> void $ callDb "doKeys" $ \db -> qry db "garbage query" [] []
-                            [[SText _]] -> return ()
-                            err -> internalError $ "doKeys: what?"
-                    _ -> return ()
+                -- case mbh of
+                --     Just bh | isUserTable tn -> do
+                --         r <- callDb "doKeys.tableExists" $ \db ->
+                --             qry db tableExistsStmt [SInt $ fromIntegral bh - 1, SText tn] [RText]
+                --         case r of
+                --             -- TODO: try to throw a DbError more cleanly. comment this.
+                --             [] -> void $ callDb "doKeys" $ \db -> qry db "garbage query" [] []
+                --             [[SText _]] -> return ()
+                --             err -> internalError $ "doKeys: what?"
+                --     _ -> return ()
                 ks <- callDb "doKeys" $ \db ->
                           qry db ("SELECT DISTINCT rowkey FROM " <> tbl tn <> blockLimitStmt) blockLimitParam [RText]
                 forM ks $ \row -> do
