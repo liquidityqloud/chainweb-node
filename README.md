@@ -41,7 +41,7 @@ Minimal recommended hardware requirements for nodes are:
 
 * 2 CPU cores
 * 4 GB of RAM
-* 250 GB SSD or fast HDD
+* 450 GB SSD or fast HDD
 * Public IP address
 
 If the node is also used as API server for Pact or mining, rosetta, chainweb-data: 4 CPU cores and 8GB of RAM.
